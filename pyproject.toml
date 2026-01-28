@@ -1,0 +1,27 @@
+[project]
+name = "study-partner-ai"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Your Name", email = "kammoun.mohamedaziz@esprit.tn"}
+]
+requires-python = "^3.11,<3.15"
+dependencies = [
+    "numpy>=2.4.1,<3.0.0",
+    "torch>=2.10.0,<3.0.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "torchvision>=0.15.0,<1.0.0",
+    "torchaudio>=2.0.0,<3.0.0",
+    "scikit-learn>=1.8.0,<2.0.0"
+]
+
+# [dependency-groups] is old syntax - change to [project.optional-dependencies]
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.2,<10.0.0",
+    "flake8>=7.3.0,<8.0.0",
+    "black>=26.1.0,<27.0.0"
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
