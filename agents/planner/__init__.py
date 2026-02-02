@@ -1,4 +1,4 @@
 """Planner agent package."""
-from .planner import PlannerAgent
+from .agent import PlannerAgent
 
 __all__ = ["PlannerAgent"]

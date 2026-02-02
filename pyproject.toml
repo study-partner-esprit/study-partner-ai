@@ -11,7 +11,16 @@ dependencies = [
     "torch>=2.10.0,<3.0.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "torchvision>=0.15.0,<1.0.0",
     "torchaudio>=2.0.0,<3.0.0",
-    "scikit-learn>=1.8.0,<2.0.0"
+    "scikit-learn>=1.8.0,<2.0.0",
+    "sentence-transformers>=2.0.0,<3.0.0",
+    "faiss-cpu>=1.7.0,<2.0.0",
+    "gradio>=4.0.0,<5.0.0",
+    "pytesseract>=0.3.10,<1.0.0",
+    "Pillow>=10.0.0,<11.0.0",
+    "PyPDF2>=3.0.0,<4.0.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "requests>=2.31.0,<3.0.0",
+    "streamlit (>=1.53.1,<2.0.0)"
 ]
 
 # [dependency-groups] is old syntax - change to [project.optional-dependencies]
@@ -32,3 +41,8 @@ dev = [
     "flake8 (>=7.3.0,<8.0.0)",
     "mypy (>=1.19.1,<2.0.0)"
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["agents"]
+addopts = "-v"
