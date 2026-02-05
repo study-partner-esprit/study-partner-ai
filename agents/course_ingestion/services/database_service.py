@@ -2,7 +2,7 @@ import os
 import traceback
 from pymongo import MongoClient
 from bson import ObjectId
-from enrichment.llm_enricher import enrich_subtopic_with_llm
+from agents.course_ingestion.enrichment.llm_enricher import enrich_subtopic_with_llm
 
 # ----------------------------
 # MongoDB setup
@@ -10,19 +10,22 @@ from enrichment.llm_enricher import enrich_subtopic_with_llm
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "study_partner")
 COLLECTION_NAME = os.getenv("COURSE_COLLECTION", "courses")
+STUDY_PLAN_COLLECTION = os.getenv("STUDY_PLAN_COLLECTION", "study_plans")
 
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
+study_plan_collection = db[STUDY_PLAN_COLLECTION]
 
 
 class DatabaseService:
-    """Database service for course operations."""
+    """Database service for course and study plan operations."""
     
     def __init__(self):
         self.client = MongoClient(MONGO_URI)
         self.db = self.client[DB_NAME]
         self.collection = self.db[COLLECTION_NAME]
+        self.study_plan_collection = self.db[STUDY_PLAN_COLLECTION]
     
     def save_course(self, course: dict):
         """
@@ -71,3 +74,26 @@ class DatabaseService:
         if isinstance(course_id, str):
             course_id = ObjectId(course_id)
         return self.collection.find_one({"_id": course_id})
+    
+    def save_study_plan(self, study_plan: dict):
+        """
+        Save a study plan to MongoDB.
+
+        Args:
+            study_plan (dict): Study plan data following PlannerOutput schema
+
+        Returns:
+            str: The inserted document ID
+        """
+        result = self.study_plan_collection.insert_one(study_plan)
+        return str(result.inserted_id)
+    
+    def get_study_plan(self, study_plan_id):
+        """Get a study plan by ID."""
+        if isinstance(study_plan_id, str):
+            study_plan_id = ObjectId(study_plan_id)
+        return self.study_plan_collection.find_one({"_id": study_plan_id})
+    
+    def get_study_plans_by_user(self, user_id: str):
+        """Get all study plans for a user."""
+        return list(self.study_plan_collection.find({"task_graph.user_id": user_id}))

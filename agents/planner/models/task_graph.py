@@ -45,6 +45,7 @@ class PlannerInput(BaseModel):
     user_id: str = Field(..., description="User identifier")
     retrieved_concepts: Optional[List[str]] = Field(default=None, description="RAG-retrieved relevant concepts")
     course_documents: Optional[List[str]] = Field(default=None, description="Course materials/documents")
+    course_knowledge: Optional[Dict[str, Any]] = Field(default=None, description="Structured course knowledge from ingestion agent")
     tokenization_settings: Optional[Dict[str, Any]] = Field(default=None, description="Settings for tokenization")
 
     @field_validator('deadline_iso')

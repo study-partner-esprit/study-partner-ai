@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from agent import ingest_course
+from agents.course_ingestion.agent import ingest_course
 from pprint import pprint
 
 # Replace with your test file(s) - can be PDF or TXT
@@ -27,7 +27,7 @@ course_id = ingest_course(course_title, full_pdf_files)
 print("Course saved with ID:", course_id)
 
 # Optionally, fetch from DB to inspect
-from services.database_service import DatabaseService
+from agents.course_ingestion.services.database_service import DatabaseService
 db = DatabaseService()
 course_json = db.get_course(course_id)
 pprint(course_json)

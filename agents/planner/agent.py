@@ -63,10 +63,21 @@ class PlannerAgent:
             )
 
         # Step 2: Index course documents if provided
+        course_texts = []
+        
+        # Extract text from course_documents (legacy support)
         if request.course_documents:
+            course_texts.extend(request.course_documents)
+        
+        # Extract text from course_knowledge (new structured format)
+        if request.course_knowledge:
+            course_texts.extend(self._extract_texts_from_course_knowledge(request.course_knowledge))
+        
+        # Index all course texts
+        if course_texts:
             try:
                 chunks_added = self.retriever.add_documents(
-                    request.course_documents,
+                    course_texts,
                     request.tokenization_settings
                 )
                 print(f"✅ Added {chunks_added} document chunks to knowledge base")
@@ -74,7 +85,7 @@ class PlannerAgent:
                 print(f"⚠️ Warning: Could not index documents - {str(e)}")
 
         # Step 3: Retrieve relevant concepts using RAG
-        if request.course_documents:
+        if course_texts:
             retrieved_concepts = request.retrieved_concepts or self.retriever.retrieve(request.goal, top_k=8)
         else:
             retrieved_concepts = []
@@ -145,3 +156,48 @@ class PlannerAgent:
         tasks = insert_buffers(tasks)        # Add buffer time
 
         return tasks
+
+    def _extract_texts_from_course_knowledge(self, course_knowledge: dict) -> list[str]:
+        """
+        Extract text content from structured course knowledge JSON.
+        
+        Args:
+            course_knowledge: Normalized course JSON from ingestion agent
+            
+        Returns:
+            List of text chunks for RAG indexing
+        """
+        texts = []
+        
+        # Extract course title
+        if "title" in course_knowledge:
+            texts.append(f"Course Title: {course_knowledge['title']}")
+        elif "course_title" in course_knowledge:
+            texts.append(f"Course Title: {course_knowledge['course_title']}")
+        
+        # Extract topic and subtopic content
+        if "topics" in course_knowledge:
+            for topic in course_knowledge["topics"]:
+                if "title" in topic:
+                    texts.append(f"Topic: {topic['title']}")
+                
+                if "subtopics" in topic:
+                    for subtopic in topic["subtopics"]:
+                        # Combine all available text content
+                        text_parts = []
+                        
+                        if "title" in subtopic:
+                            text_parts.append(f"Subtopic: {subtopic['title']}")
+                        
+                        if "summary" in subtopic:
+                            text_parts.append(subtopic["summary"])
+                        
+                        if "tokenized_chunks" in subtopic:
+                            text_parts.extend(subtopic["tokenized_chunks"])
+                        
+                        if text_parts:
+                            combined_text = " ".join(text_parts)
+                            if combined_text.strip():
+                                texts.append(combined_text)
+        
+        return texts

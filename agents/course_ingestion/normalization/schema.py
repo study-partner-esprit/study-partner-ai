@@ -13,6 +13,7 @@ class Subtopic(BaseModel):
     tables: List[str] = []
     source_spans: List[Dict[str, str]] = []
     difficulty_estimate: float = 0.0
+    tokenized_chunks: List[str] = []
 
 class Topic(BaseModel):
     id: str

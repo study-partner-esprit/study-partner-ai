@@ -39,6 +39,7 @@ class SimpleGoalDecomposer:
             num_tasks = min(len(concepts), max(1, available_minutes // 30))
             task_ids = [str(uuid.uuid4()) for _ in range(num_tasks)]
             for i in range(num_tasks):
+                concept = concepts[i]  # Get the concept for this task
                 prerequisites = [task_ids[i-1]] if i > 0 else []
                 tasks.append(AtomicTask(
                     id=task_ids[i],

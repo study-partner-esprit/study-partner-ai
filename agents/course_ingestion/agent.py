@@ -1,10 +1,10 @@
-from extraction.pdf_loader import extract_text_from_pdf
-from extraction.ocr import ocr_pdf
-from parsing.layout_parser import detect_sections
-from parsing.section_builder import build_subtopics
-from normalization.normalizer import normalize_course
-from services.database_service import DatabaseService
-from normalization.tokenizer import tokenize_subtopics
+from agents.course_ingestion.extraction.pdf_loader import extract_text_from_pdf
+from agents.course_ingestion.extraction.ocr import ocr_pdf
+from agents.course_ingestion.parsing.layout_parser import detect_sections
+from agents.course_ingestion.parsing.section_builder import build_subtopics
+from agents.course_ingestion.normalization.normalizer import normalize_course
+from agents.course_ingestion.services.database_service import DatabaseService
+from agents.course_ingestion.normalization.tokenizer import tokenize_subtopics
 
 def ingest_course(course_title: str, pdf_files: list):
     all_sections = []
