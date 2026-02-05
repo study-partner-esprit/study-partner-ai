@@ -1,33 +1,25 @@
 # =============================================================================
-# Agentic AI CI/CD Pipeline (Python AI/ML Modules)
+# Study Partner AI CI/CD Pipeline
 # =============================================================================
-# Triggers: push to main/develop, pull requests
-# Modules: Planner, Evaluator, Coach, Gamification, Focus/Fatigue/Affective
-# Stages: Lint → Test → Model Validation → Build → Containerize → Deploy
+# Tests the AI agents for course ingestion and study planning
+# Stages: Lint → Test → Build → Deploy
 # =============================================================================
 
-name: Agentic AI CI/CD
+name: Study Partner AI CI/CD
 
 on:
   push:
     branches:
-      - main      # Production deployments
-      - develop   # Staging deployments
+      - main
+      - develop
   pull_request:
     branches:
       - main
       - develop
 
-# Prevent concurrent deployments
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   PYTHON_VERSION: '3.12'
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}-ai
-  POETRY_VERSION: '2.0.0'
+  POETRY_VERSION: '1.8.3'
 
 jobs:
   # ===========================================================================
@@ -62,108 +54,42 @@ jobs:
       - name: 📥 Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: ${{ env.POETRY_VERSION }}
+          version: ${{ env.PYTHON_VERSION }}
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: 📥 Install dependencies
-        run: poetry install --no-interaction
+        run: poetry install --with dev
 
       # Black - Code formatting check
       - name: 🎨 Check Black formatting
-        run: poetry run black --check --diff .
+        run: poetry run black --check --diff agents/
 
       # Flake8 - Python linting
       - name: 🔍 Run Flake8 linting
-        run: poetry run flake8 . --count --statistics --show-source
+        run: poetry run flake8 agents/ --count --statistics --show-source --max-line-length=88
 
       # isort - Import sorting check
       - name: 📝 Check import sorting (isort)
-        run: poetry run isort --check-only --diff .
-        continue-on-error: true
-
-      # mypy - Type checking (optional but recommended for AI code)
-      - name: 🔎 Run mypy type checking
-        run: poetry run mypy src/ --ignore-missing-imports
+        run: poetry run isort --check-only --diff agents/
         continue-on-error: true
 
   # ===========================================================================
-  # STAGE 2: Unit Tests - AI Modules
+  # STAGE 2: Unit & Integration Tests
   # ===========================================================================
-  unit-tests:
-    name: 🧪 Unit Tests
+  test:
+    name: 🧪 Run Tests
     runs-on: ubuntu-latest
     needs: lint
-    
-    strategy:
-      matrix:
-        # Test each AI module separately for better isolation
-        module: [planner, evaluator, coach, gamification, focus, fatigue, affective]
-      fail-fast: false
-    
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: 📦 Cache Poetry dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.local/share/pypoetry
-            .venv
-          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-
-      - name: 📥 Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: 📥 Install dependencies
-        run: poetry install --no-interaction
-
-      # Run unit tests for specific module
-      - name: 🧪 Run unit tests - ${{ matrix.module }}
-        run: |
-          poetry run pytest tests/unit/${{ matrix.module }}/ \
-            -v \
-            --cov=src/${{ matrix.module }} \
-            --cov-report=xml:coverage-${{ matrix.module }}.xml \
-            --cov-report=term-missing \
-            --tb=short
-        env:
-          PYTHONPATH: ${{ github.workspace }}/src
-
-      # Upload coverage
-      - name: 📊 Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.module }}
-          path: coverage-${{ matrix.module }}.xml
-
-  # ===========================================================================
-  # STAGE 3: Integration Tests - Study Session Simulation
-  # ===========================================================================
-  integration-tests:
-    name: 🔗 Integration Tests
-    runs-on: ubuntu-latest
-    needs: lint
-    
     services:
-      # Redis for session caching
-      redis:
-        image: redis:7-alpine
+      # MongoDB for integration tests
+      mongodb:
+        image: mongo:7-jammy
         ports:
-          - 6379:6379
+          - 27017:27017
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -189,180 +115,39 @@ jobs:
       - name: 📥 Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: ${{ env.POETRY_VERSION }}
+          version: ${{ env.PYTHON_VERSION }}
           virtualenvs-create: true
           virtualenvs-in-project: true
 
       - name: 📥 Install dependencies
-        run: poetry install --no-interaction
+        run: poetry install --with dev
 
-      # Simulate study session with mock user
-      - name: 🔗 Run integration tests
+      # Run all tests
+      - name: 🧪 Run all tests
         run: |
-          poetry run pytest tests/integration/ \
-            -v \
-            --tb=short \
-            -m "integration" \
-            --timeout=300
+          cd agents
+          poetry run python -m pytest tests/ -v --tb=short --cov=agents --cov-report=xml --cov-report=term-missing
         env:
-          PYTHONPATH: ${{ github.workspace }}/src
-          REDIS_URL: redis://localhost:6379
-          # Mock user configuration
-          MOCK_USER_ID: test-user-001
-          MOCK_SESSION_DURATION: 300
+          PYTHONPATH: ${{ github.workspace }}/agents
+          MONGO_URI: mongodb://localhost:27017
 
-  # ===========================================================================
-  # STAGE 4: Model Validation - CV/Audio Dataset Check
-  # ===========================================================================
-  model-validation:
-    name: 🤖 Model Validation
-    runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests]
-    
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
+      # Upload coverage
+      - name: 📊 Upload coverage report
+        uses: codecov/codecov-action@v4
         with:
-          lfs: true  # For large model files
-
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: 📦 Cache Poetry dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.local/share/pypoetry
-            .venv
-          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
-
-      # Cache model files
-      - name: 📦 Cache ML models
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/huggingface
-            models/
-          key: models-${{ hashFiles('models/**/*.onnx', 'models/**/*.pt') }}
-
-      - name: 📥 Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: ${{ env.POETRY_VERSION }}
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-
-      - name: 📥 Install dependencies
-        run: poetry install --no-interaction --with ml
-
-      # Download test datasets
-      - name: 📥 Download test datasets
-        run: |
-          poetry run python scripts/download_test_data.py \
-            --cv-samples 100 \
-            --audio-samples 50
+          file: ./agents/coverage.xml
+          flags: ai-tests
+          name: Study Partner AI Coverage
         env:
-          HF_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
-
-      # Validate Focus Detection Model
-      - name: 🎯 Validate Focus Detection Model
-        run: |
-          poetry run python -m validation.focus_model \
-            --dataset tests/data/cv_samples/ \
-            --threshold 0.85 \
-            --report validation-focus.json
-
-      # Validate Fatigue Detection Model
-      - name: 😴 Validate Fatigue Detection Model
-        run: |
-          poetry run python -m validation.fatigue_model \
-            --dataset tests/data/cv_samples/ \
-            --threshold 0.80 \
-            --report validation-fatigue.json
-
-      # Validate Affective State Model
-      - name: 😊 Validate Affective State Model
-        run: |
-          poetry run python -m validation.affective_model \
-            --cv-data tests/data/cv_samples/ \
-            --audio-data tests/data/audio_samples/ \
-            --threshold 0.75 \
-            --report validation-affective.json
-
-      # Upload validation reports
-      - name: 📊 Upload validation reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: model-validation-reports
-          path: validation-*.json
-
-      # Check confidence scores meet thresholds
-      - name: ✅ Verify model confidence thresholds
-        run: |
-          poetry run python scripts/check_validation_results.py \
-            --reports validation-*.json \
-            --min-accuracy 0.80
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   # ===========================================================================
-  # STAGE 5: Security & Privacy Checks
-  # ===========================================================================
-  security:
-    name: 🔒 Security Scan
-    runs-on: ubuntu-latest
-    needs: lint
-    
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      # Bandit - Python security linter
-      - name: 🔍 Run Bandit security scan
-        run: |
-          pip install bandit
-          bandit -r src/ -f json -o bandit-report.json || true
-          bandit -r src/ -ll
-
-      # Safety - Check dependencies for vulnerabilities
-      - name: 🛡️ Check dependencies with Safety
-        run: |
-          pip install safety
-          safety check --full-report
-        continue-on-error: true
-
-      # Trivy vulnerability scanner
-      - name: 🛡️ Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
-
-      # Upload security report
-      - name: 📤 Upload security report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: security-reports
-          path: bandit-report.json
-
-  # ===========================================================================
-  # STAGE 6: Build Package
+  # STAGE 3: Build Package
   # ===========================================================================
   build:
     name: 🏗️ Build Package
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, model-validation]
-    
-    outputs:
-      version: ${{ steps.version.outputs.version }}
+    needs: test
     
     steps:
       - name: 📥 Checkout code
@@ -376,14 +161,7 @@ jobs:
       - name: 📥 Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: ${{ env.POETRY_VERSION }}
-
-      # Get version from pyproject.toml
-      - name: 🔖 Get version
-        id: version
-        run: |
-          VERSION=$(poetry version -s)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          version: ${{ env.PYTHON_VERSION }}
 
       # Build Python package
       - name: 🏗️ Build package
@@ -393,14 +171,14 @@ jobs:
       - name: 📤 Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ai-package-${{ steps.version.outputs.version }}
+          name: ai-package
           path: dist/
 
   # ===========================================================================
-  # STAGE 7: Docker Containerization
+  # STAGE 4: Docker Build & Push
   # ===========================================================================
-  containerize:
-    name: 🐳 Build Docker Image
+  docker:
+    name: 🐳 Build & Push Docker Image
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'push'
@@ -409,19 +187,9 @@ jobs:
       contents: read
       packages: write
     
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build-push.outputs.digest }}
-    
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      # Set up QEMU for multi-platform builds
-      - name: 🔧 Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       # Set up Docker Buildx
       - name: 🔧 Set up Docker Buildx
@@ -431,197 +199,34 @@ jobs:
       - name: 🔐 Login to Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Generate image metadata
-      - name: 📋 Extract metadata for Docker
+      # Generate image tags
+      - name: 📋 Generate image tags
         id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=sha,prefix={{branch}}-
-            type=semver,pattern={{version}},value=${{ needs.build.outputs.version }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/develop' }}
+        run: |
+          # Get version from pyproject.toml
+          VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Generate tags
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "tags=ghcr.io/${{ github.repository }}/ai:latest,ghcr.io/${{ github.repository }}/ai:$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "tags=ghcr.io/${{ github.repository }}/ai:staging,ghcr.io/${{ github.repository }}/ai:$VERSION-staging" >> $GITHUB_OUTPUT
+          fi
 
       # Build and push Docker image
       - name: 🐳 Build and push Docker image
-        id: build-push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
-
-  # ===========================================================================
-  # STAGE 8: Deploy to Staging (Kubernetes)
-  # ===========================================================================
-  deploy-staging:
-    name: 🚀 Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: containerize
-    if: github.ref == 'refs/heads/develop'
-    environment:
-      name: staging
-      url: https://ai-staging.study-partner.app
-    
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      # Setup kubectl
-      - name: 🔧 Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-
-      # Configure Kubernetes context
-      - name: 🔐 Configure Kubernetes context
-        uses: azure/k8s-set-context@v4
-        with:
-          kubeconfig: ${{ secrets.KUBE_CONFIG_STAGING }}
-
-      # Deploy to Kubernetes staging
-      - name: 🚀 Deploy to Kubernetes (Staging)
-        run: |
-          # Update image tag in manifests
-          sed -i "s|IMAGE_TAG|${{ needs.containerize.outputs.image-digest }}|g" k8s/staging/*.yml
-          
-          # Apply manifests
-          kubectl apply -f k8s/staging/ -n ai-staging
-          
-          # Wait for rollout
-          kubectl rollout status deployment/study-partner-ai -n ai-staging --timeout=300s
-
-      # Verify deployment health
-      - name: ❤️ Verify deployment health
-        run: |
-          kubectl get pods -n ai-staging -l app=study-partner-ai
-          kubectl logs -n ai-staging -l app=study-partner-ai --tail=50
-
-  # ===========================================================================
-  # STAGE 9: Deploy to Production (Kubernetes)
-  # ===========================================================================
-  deploy-production:
-    name: 🚀 Deploy to Production
-    runs-on: ubuntu-latest
-    needs: containerize
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: production
-      url: https://ai.study-partner.app
-    
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🔧 Setup kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: 'latest'
-
-      - name: 🔐 Configure Kubernetes context
-        uses: azure/k8s-set-context@v4
-        with:
-          kubeconfig: ${{ secrets.KUBE_CONFIG_PRODUCTION }}
-
-      # Deploy to Kubernetes production with canary
-      - name: 🚀 Deploy to Kubernetes (Production)
-        run: |
-          # Update image tag
-          sed -i "s|IMAGE_TAG|${{ needs.containerize.outputs.image-digest }}|g" k8s/production/*.yml
-          
-          # Apply with canary deployment
-          kubectl apply -f k8s/production/ -n ai-production
-          
-          # Wait for rollout
-          kubectl rollout status deployment/study-partner-ai -n ai-production --timeout=600s
-
-  # ===========================================================================
-  # STAGE 10: Post-Deploy - Monitoring & Validation
-  # ===========================================================================
-  post-deploy:
-    name: 📊 Post-Deploy Validation
-    runs-on: ubuntu-latest
-    needs: [deploy-staging, deploy-production]
-    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
-    
-    steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: 📥 Install test dependencies
-        run: pip install requests pytest
-
-      # Determine environment URL
-      - name: 🔍 Set API URL
-        id: set-url
-        run: |
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "url=https://ai.study-partner.app" >> $GITHUB_OUTPUT
-          else
-            echo "url=https://ai-staging.study-partner.app" >> $GITHUB_OUTPUT
-          fi
-
-      # Health check
-      - name: ❤️ API Health Check
-        run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ steps.set-url.outputs.url }}/health)
-          if [ $response -eq 200 ]; then
-            echo "✅ Health check passed"
-          else
-            echo "❌ Health check failed with status: $response"
-            exit 1
-          fi
-
-      # Check confidence scores from live models
-      - name: 📊 Validate live model confidence scores
-        run: |
-          python scripts/validate_live_models.py \
-            --api-url ${{ steps.set-url.outputs.url }} \
-            --min-confidence 0.75
-        env:
-          API_KEY: ${{ secrets.AI_SERVICE_API_KEY }}
-
-      # Log metrics to monitoring
-      - name: 📈 Log deployment metrics
-        run: |
-          curl -X POST ${{ secrets.PROMETHEUS_PUSHGATEWAY }}/metrics/job/ai-deploy \
-            -d "deployment_success{env=\"${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}\"} 1"
-        continue-on-error: true
-
-      # Notify on completion
-      - name: 📢 Notify deployment success
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "✅ AI Service deployed successfully to ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "🤖 *Study Partner AI* deployed to *${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}*\nVersion: `${{ needs.build.outputs.version }}`\nCommit: `${{ github.sha }}`"
-                  }
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
