@@ -43,6 +43,9 @@ def create_study_plan(goal: str, available_time: int, subject_json: str = "") ->
                 if cleaned_json.startswith('\ufeff'):
                     cleaned_json = cleaned_json[1:]
                 
+                # Remove citation markers like [cite_start] or [cite: 123]
+                cleaned_json = re.sub(r'\[cite[^\]]*\]', '', cleaned_json)
+                
                 # Remove single-line comments (// ...)
                 cleaned_json = re.sub(r'//.*', '', cleaned_json)
                 
