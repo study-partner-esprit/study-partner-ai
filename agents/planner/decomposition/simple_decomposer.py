@@ -1,4 +1,5 @@
 """Simple goal decomposer that creates multiple tasks based on goal analysis."""
+
 import uuid
 from typing import List
 from agents.planner.models.task_graph import AtomicTask
@@ -12,7 +13,9 @@ class SimpleGoalDecomposer:
     difficulty progression and prerequisites.
     """
 
-    def decompose(self, goal: str, concepts: List[str] = None, available_minutes: int = 90) -> List[AtomicTask]:
+    def decompose(
+        self, goal: str, concepts: List[str] = None, available_minutes: int = 90
+    ) -> List[AtomicTask]:
         """
         Decompose goal into multiple atomic tasks.
 
@@ -29,7 +32,9 @@ class SimpleGoalDecomposer:
         # Use concepts from JSON documents to create tasks
         return self._create_general_learning_tasks(goal, concepts, available_minutes)
 
-    def _create_general_learning_tasks(self, goal: str, concepts: List[str], available_minutes: int) -> List[AtomicTask]:
+    def _create_general_learning_tasks(
+        self, goal: str, concepts: List[str], available_minutes: int
+    ) -> List[AtomicTask]:
         """Create general learning tasks based on goal and concepts."""
         tasks = []
 
@@ -40,22 +45,24 @@ class SimpleGoalDecomposer:
             task_ids = [str(uuid.uuid4()) for _ in range(num_tasks)]
             for i in range(num_tasks):
                 concept = concepts[i]  # Get the concept for this task
-                prerequisites = [task_ids[i-1]] if i > 0 else []
-                tasks.append(AtomicTask(
-                    id=task_ids[i],
-                    title=f"Study {concept}",
-                    description=f"Learn and understand {concept} as part of {goal}",
-                    estimated_minutes=30,
-                    difficulty=0.4 + (i * 0.1),  # Increasing difficulty
-                    prerequisites=prerequisites
-                ))
+                prerequisites = [task_ids[i - 1]] if i > 0 else []
+                tasks.append(
+                    AtomicTask(
+                        id=task_ids[i],
+                        title=f"Study {concept}",
+                        description=f"Learn and understand {concept} as part of {goal}",
+                        estimated_minutes=30,
+                        difficulty=0.4 + (i * 0.1),  # Increasing difficulty
+                        prerequisites=prerequisites,
+                    )
+                )
 
         # Add a general study task if no concepts
         if not tasks:
             task1_id = str(uuid.uuid4())
             task2_id = str(uuid.uuid4())
             task3_id = str(uuid.uuid4())
-            
+
             tasks = [
                 AtomicTask(
                     id=task1_id,
@@ -63,7 +70,7 @@ class SimpleGoalDecomposer:
                     description=f"Basic concepts and overview of {goal}",
                     estimated_minutes=30,
                     difficulty=0.3,
-                    prerequisites=[]
+                    prerequisites=[],
                 ),
                 AtomicTask(
                     id=task2_id,
@@ -71,7 +78,7 @@ class SimpleGoalDecomposer:
                     description=f"Essential principles and foundations of {goal}",
                     estimated_minutes=45,
                     difficulty=0.5,
-                    prerequisites=[task1_id]
+                    prerequisites=[task1_id],
                 ),
                 AtomicTask(
                     id=task3_id,
@@ -79,8 +86,8 @@ class SimpleGoalDecomposer:
                     description=f"Complex aspects and applications of {goal}",
                     estimated_minutes=45,
                     difficulty=0.7,
-                    prerequisites=[task2_id]
-                )
+                    prerequisites=[task2_id],
+                ),
             ]
 
         return tasks

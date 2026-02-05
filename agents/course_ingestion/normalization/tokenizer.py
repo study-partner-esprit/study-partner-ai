@@ -1,5 +1,6 @@
 from typing import List, Dict
 
+
 def chunk_text(text: str, chunk_size: int = 200, overlap: int = 50) -> List[str]:
     """
     Splits text into chunks of approximately chunk_size words
@@ -18,7 +19,9 @@ def chunk_text(text: str, chunk_size: int = 200, overlap: int = 50) -> List[str]
     return chunks
 
 
-def tokenize_course(course_json: Dict, chunk_size: int = 200, overlap: int = 50) -> Dict:
+def tokenize_course(
+    course_json: Dict, chunk_size: int = 200, overlap: int = 50
+) -> Dict:
     """
     Adds a 'tokenized_chunks' field to each subtopic in CourseKnowledgeJSON.
     Each subtopic will contain the chunks of text ready for RAG.
@@ -31,7 +34,9 @@ def tokenize_course(course_json: Dict, chunk_size: int = 200, overlap: int = 50)
     return course_json
 
 
-def tokenize_subtopics(subtopics: List[Dict], chunk_size: int = 200, overlap: int = 50) -> List[Dict]:
+def tokenize_subtopics(
+    subtopics: List[Dict], chunk_size: int = 200, overlap: int = 50
+) -> List[Dict]:
     """
     Tokenize the full content of each subtopic for RAG.
     Uses the full_content field for complete context, not just summary.
@@ -40,12 +45,14 @@ def tokenize_subtopics(subtopics: List[Dict], chunk_size: int = 200, overlap: in
         # Use full_content if available, otherwise fall back to summary
         full_text = sub.get("full_content", sub.get("summary", ""))
         if full_text:
-            sub["tokenized_chunks"] = chunk_text(full_text, chunk_size=chunk_size, overlap=overlap)
+            sub["tokenized_chunks"] = chunk_text(
+                full_text, chunk_size=chunk_size, overlap=overlap
+            )
         else:
             sub["tokenized_chunks"] = []
-        
+
         # Remove full_content from final output to save space (it's in chunks now)
         if "full_content" in sub:
             del sub["full_content"]
-    
+
     return subtopics

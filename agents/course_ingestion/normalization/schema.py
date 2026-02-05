@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 
+
 class Subtopic(BaseModel):
     id: str
     title: str
@@ -15,6 +16,7 @@ class Subtopic(BaseModel):
     difficulty_estimate: float = 0.0
     tokenized_chunks: List[str] = []
 
+
 class Topic(BaseModel):
     id: str
     title: str
@@ -22,6 +24,7 @@ class Topic(BaseModel):
     subtopics: List[Subtopic]
     prerequisites: List[str] = []
     estimated_learning_time: Optional[int] = None
+
 
 class CourseKnowledgeJSON(BaseModel):
     course_title: str

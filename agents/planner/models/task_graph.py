@@ -1,4 +1,5 @@
 """Task graph models for planning using Pydantic."""
+
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -7,16 +8,25 @@ from datetime import datetime
 class AtomicTask(BaseModel):
     """
     Represents an atomic task in the task graph.
-    
+
     Each task is a small, focused learning activity that can be completed
     in a single session (5-45 minutes).
     """
+
     id: str = Field(..., description="Unique identifier for the task")
     title: str = Field(..., description="Short, descriptive title")
-    description: str = Field(..., description="Detailed description of what to learn/do")
-    estimated_minutes: int = Field(..., ge=5, le=45, description="Estimated time in minutes (5-45)")
-    difficulty: float = Field(default=0.5, ge=0.0, le=1.0, description="Difficulty level (0.0-1.0)")
-    prerequisites: List[str] = Field(default_factory=list, description="List of prerequisite task IDs")
+    description: str = Field(
+        ..., description="Detailed description of what to learn/do"
+    )
+    estimated_minutes: int = Field(
+        ..., ge=5, le=45, description="Estimated time in minutes (5-45)"
+    )
+    difficulty: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Difficulty level (0.0-1.0)"
+    )
+    prerequisites: List[str] = Field(
+        default_factory=list, description="List of prerequisite task IDs"
+    )
     is_review: bool = Field(default=False, description="Whether this is a review task")
 
     class Config:
@@ -28,7 +38,7 @@ class AtomicTask(BaseModel):
                 "estimated_minutes": 30,
                 "difficulty": 0.3,
                 "prerequisites": [],
-                "is_review": False
+                "is_review": False,
             }
         }
 
@@ -36,23 +46,34 @@ class AtomicTask(BaseModel):
 class PlannerInput(BaseModel):
     """
     Input for the planner agent.
-    
+
     Contains all information needed to generate a personalized study plan.
     """
+
     goal: str = Field(..., description="Main learning goal")
     deadline_iso: str = Field(..., description="Deadline in ISO 8601 format")
-    available_minutes: int = Field(..., gt=0, description="Total available time in minutes")
+    available_minutes: int = Field(
+        ..., gt=0, description="Total available time in minutes"
+    )
     user_id: str = Field(..., description="User identifier")
-    retrieved_concepts: Optional[List[str]] = Field(default=None, description="RAG-retrieved relevant concepts")
-    course_documents: Optional[List[str]] = Field(default=None, description="Course materials/documents")
-    course_knowledge: Optional[Dict[str, Any]] = Field(default=None, description="Structured course knowledge from ingestion agent")
-    tokenization_settings: Optional[Dict[str, Any]] = Field(default=None, description="Settings for tokenization")
+    retrieved_concepts: Optional[List[str]] = Field(
+        default=None, description="RAG-retrieved relevant concepts"
+    )
+    course_documents: Optional[List[str]] = Field(
+        default=None, description="Course materials/documents"
+    )
+    course_knowledge: Optional[Dict[str, Any]] = Field(
+        default=None, description="Structured course knowledge from ingestion agent"
+    )
+    tokenization_settings: Optional[Dict[str, Any]] = Field(
+        default=None, description="Settings for tokenization"
+    )
 
-    @field_validator('deadline_iso')
+    @field_validator("deadline_iso")
     def validate_deadline(cls, v):
         """Validate that deadline_iso is a valid ISO 8601 datetime."""
         try:
-            datetime.fromisoformat(v.replace('Z', '+00:00'))
+            datetime.fromisoformat(v.replace("Z", "+00:00"))
         except ValueError:
             raise ValueError(f"Invalid ISO 8601 datetime: {v}")
         return v
@@ -66,7 +87,7 @@ class PlannerInput(BaseModel):
                 "user_id": "user123",
                 "retrieved_concepts": ["NumPy", "Pandas", "Scikit-learn"],
                 "course_documents": [],
-                "tokenization_settings": {}
+                "tokenization_settings": {},
             }
         }
 
@@ -74,24 +95,29 @@ class PlannerInput(BaseModel):
 class TaskGraph(BaseModel):
     """
     Represents a graph of tasks for achieving a learning goal.
-    
+
     Contains the sequence of atomic tasks needed to complete the goal.
     """
+
     goal: str = Field(..., description="The learning goal")
     tasks: List[AtomicTask] = Field(..., description="List of atomic tasks")
-    total_estimated_minutes: int = Field(default=0, description="Total time for all tasks")
+    total_estimated_minutes: int = Field(
+        default=0, description="Total time for all tasks"
+    )
 
     def model_post_init(self, __context):
         """Calculate total estimated minutes after initialization."""
         if self.tasks:
-            self.total_estimated_minutes = sum(task.estimated_minutes for task in self.tasks)
+            self.total_estimated_minutes = sum(
+                task.estimated_minutes for task in self.tasks
+            )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "goal": "Learn Python basics",
                 "tasks": [],
-                "total_estimated_minutes": 0
+                "total_estimated_minutes": 0,
             }
         }
 
@@ -99,12 +125,17 @@ class TaskGraph(BaseModel):
 class PlannerOutput(BaseModel):
     """
     Output from the planner agent.
-    
+
     Contains the generated task graph and any warnings or clarification requests.
     """
+
     task_graph: TaskGraph = Field(..., description="Generated task graph")
-    warning: Optional[str] = Field(default=None, description="Warning message if any issues")
-    clarification_required: bool = Field(default=False, description="Whether user input needs clarification")
+    warning: Optional[str] = Field(
+        default=None, description="Warning message if any issues"
+    )
+    clarification_required: bool = Field(
+        default=False, description="Whether user input needs clarification"
+    )
 
     class Config:
         json_schema_extra = {
@@ -112,9 +143,9 @@ class PlannerOutput(BaseModel):
                 "task_graph": {
                     "goal": "Learn Python basics",
                     "tasks": [],
-                    "total_estimated_minutes": 0
+                    "total_estimated_minutes": 0,
                 },
                 "warning": None,
-                "clarification_required": False
+                "clarification_required": False,
             }
         }

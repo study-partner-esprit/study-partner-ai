@@ -9,15 +9,13 @@ This module coordinates the flow between:
 from agents.course_ingestion.agent import ingest_course
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.planner.agent import PlannerAgent
-from agents.planner.models.task_graph import PlannerInput, PlannerOutput
+from agents.planner.models.task_graph import PlannerInput
 from datetime import datetime, timedelta
 import uuid
 
 
 def run_study_planner(
-    pdf_paths: list[str],
-    learning_goal: str,
-    available_time: int
+    pdf_paths: list[str], learning_goal: str, available_time: int
 ) -> dict:
     """
     Orchestrate the complete study planning pipeline.
@@ -62,7 +60,7 @@ def run_study_planner(
         deadline_iso=deadline.isoformat(),
         available_minutes=available_time,
         user_id=str(uuid.uuid4()),  # Generate a unique user ID for this session
-        course_knowledge=course_data  # Pass the full course JSON as context
+        course_knowledge=course_data,  # Pass the full course JSON as context
     )
 
     # Step 4: Run the planner agent
@@ -77,7 +75,7 @@ def run_study_planner(
     study_plan_data = planner_output.model_dump()
     study_plan_data["course_id"] = course_id  # Link to the course
     study_plan_data["created_at"] = datetime.now().isoformat()
-    
+
     study_plan_id = db.save_study_plan(study_plan_data)
     print(f"✅ Study plan saved with ID: {study_plan_id}")
 
@@ -90,9 +88,7 @@ def run_study_planner(
 
 # Convenience function for testing
 def run_study_planner_with_course_id(
-    course_id: str,
-    learning_goal: str,
-    available_time: int
+    course_id: str, learning_goal: str, available_time: int
 ) -> dict:
     """
     Alternative entry point that uses an existing course ID instead of ingesting PDFs.
@@ -126,7 +122,7 @@ def run_study_planner_with_course_id(
         deadline_iso=deadline.isoformat(),
         available_minutes=available_time,
         user_id=str(uuid.uuid4()),
-        course_knowledge=course_data
+        course_knowledge=course_data,
     )
 
     # Step 3: Run the planner agent
@@ -141,7 +137,7 @@ def run_study_planner_with_course_id(
     study_plan_data = planner_output.model_dump()
     study_plan_data["course_id"] = course_id  # Link to the course
     study_plan_data["created_at"] = datetime.now().isoformat()
-    
+
     db = DatabaseService()
     study_plan_id = db.save_study_plan(study_plan_data)
     print(f"✅ Study plan saved with ID: {study_plan_id}")

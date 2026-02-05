@@ -21,7 +21,9 @@ class TestIngestionToPlannerIntegration:
     def test_full_pipeline_with_test_pdf(self):
         """Test the complete pipeline using the existing test PDF."""
         # Path to the test PDF
-        test_pdf_path = os.path.join(os.path.dirname(__file__), "..", "course_ingestion", "tests", "test.pdf")
+        test_pdf_path = os.path.join(
+            os.path.dirname(__file__), "..", "course_ingestion", "tests", "test.pdf"
+        )
 
         # Skip test if PDF doesn't exist
         if not os.path.exists(test_pdf_path):
@@ -35,7 +37,7 @@ class TestIngestionToPlannerIntegration:
         result = run_study_planner(
             pdf_paths=[test_pdf_path],
             learning_goal=learning_goal,
-            available_time=available_time
+            available_time=available_time,
         )
 
         # Verify the result structure
@@ -64,20 +66,32 @@ class TestIngestionToPlannerIntegration:
             # Verify data types and ranges
             assert isinstance(task["title"], str), "Title must be a string"
             assert isinstance(task["description"], str), "Description must be a string"
-            assert isinstance(task["estimated_minutes"], int), "Estimated minutes must be an integer"
-            assert 5 <= task["estimated_minutes"] <= 45, "Estimated minutes must be between 5-45"
-            assert isinstance(task["difficulty"], (int, float)), "Difficulty must be a number"
-            assert 0.0 <= task["difficulty"] <= 1.0, "Difficulty must be between 0.0-1.0"
+            assert isinstance(
+                task["estimated_minutes"], int
+            ), "Estimated minutes must be an integer"
+            assert (
+                5 <= task["estimated_minutes"] <= 45
+            ), "Estimated minutes must be between 5-45"
+            assert isinstance(
+                task["difficulty"], (int, float)
+            ), "Difficulty must be a number"
+            assert (
+                0.0 <= task["difficulty"] <= 1.0
+            ), "Difficulty must be between 0.0-1.0"
 
         # Verify the goal matches what we requested
         assert task_graph["goal"] == learning_goal
 
         print(f"✅ Generated {len(tasks)} tasks for goal: {learning_goal}")
-        print(f"📊 Total estimated time: {task_graph['total_estimated_minutes']} minutes")
+        print(
+            f"📊 Total estimated time: {task_graph['total_estimated_minutes']} minutes"
+        )
 
         # Print first few tasks for verification
         for i, task in enumerate(tasks[:3]):
-            print(f"Task {i+1}: {task['title']} ({task['estimated_minutes']} min, difficulty: {task['difficulty']})")
+            print(
+                f"Task {i+1}: {task['title']} ({task['estimated_minutes']} min, difficulty: {task['difficulty']})"
+            )
 
     def test_pipeline_with_invalid_pdf(self):
         """Test that the pipeline handles invalid PDF paths gracefully."""
@@ -85,20 +99,20 @@ class TestIngestionToPlannerIntegration:
             run_study_planner(
                 pdf_paths=["/nonexistent/file.pdf"],
                 learning_goal="Test goal",
-                available_time=60
+                available_time=60,
             )
 
     def test_pipeline_with_empty_goal(self):
         """Test that the pipeline handles empty goals appropriately."""
-        test_pdf_path = os.path.join(os.path.dirname(__file__), "course_ingestion", "tests", "testing.pdf")
+        test_pdf_path = os.path.join(
+            os.path.dirname(__file__), "course_ingestion", "tests", "testing.pdf"
+        )
 
         if not os.path.exists(test_pdf_path):
             pytest.skip(f"Test PDF not found at: {test_pdf_path}")
 
         result = run_study_planner(
-            pdf_paths=[test_pdf_path],
-            learning_goal="",  # Empty goal
-            available_time=60
+            pdf_paths=[test_pdf_path], learning_goal="", available_time=60  # Empty goal
         )
 
         # Should require clarification for empty goal

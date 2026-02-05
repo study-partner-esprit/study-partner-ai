@@ -1,5 +1,5 @@
-
 from sentence_transformers import SentenceTransformer
+
 
 class EmbeddingModel:
     """

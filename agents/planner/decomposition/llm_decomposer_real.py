@@ -3,6 +3,7 @@ from typing import List
 import uuid
 from agents.planner.models.task_graph import AtomicTask
 
+
 class LLMDecomposerReal:
     """
     Real LLM decomposer using LM Studio.
@@ -15,7 +16,9 @@ class LLMDecomposerReal:
         """
         self.endpoint = endpoint
 
-    def decompose(self, goal: str, concepts: List[str], available_minutes: int) -> List[AtomicTask]:
+    def decompose(
+        self, goal: str, concepts: List[str], available_minutes: int
+    ) -> List[AtomicTask]:
         """
         Calls the LLM to generate atomic tasks.
         :param goal: user learning goal
@@ -47,21 +50,26 @@ Example:
                     "model": "qwen/qwen2.5-vl-7b",
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 1500,
-                    "temperature": 0.7
+                    "temperature": 0.7,
                 },
-                timeout=60
+                timeout=60,
             )
             response.raise_for_status()
             result_json = response.json()
 
             # OpenAI-compatible API returns text in choices[0].message.content
-            output_text = result_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+            output_text = (
+                result_json.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
 
             # Parse JSON returned by the model
             import json
             import re
+
             # Extract JSON array from the response text
-            json_match = re.search(r'\[.*\]', output_text, re.DOTALL)
+            json_match = re.search(r"\[.*\]", output_text, re.DOTALL)
             if json_match:
                 try:
                     tasks_data = json.loads(json_match.group(0))
@@ -72,10 +80,12 @@ Example:
                     task_matches = re.findall(task_pattern, output_text, re.DOTALL)
                     if task_matches:
                         # Reconstruct valid JSON array
-                        fixed_json = '[' + ','.join(task_matches) + ']'
+                        fixed_json = "[" + ",".join(task_matches) + "]"
                         tasks_data = json.loads(fixed_json)
                     else:
-                        raise ValueError("Could not extract valid task objects from response")
+                        raise ValueError(
+                            "Could not extract valid task objects from response"
+                        )
             else:
                 raise ValueError("No JSON array found in response")
 
@@ -85,14 +95,21 @@ Example:
                 # Handle difficulty conversion
                 difficulty_str = t.get("difficulty", 0.5)
                 if isinstance(difficulty_str, str):
-                    difficulty_map = {"beginner": 0.3, "intermediate": 0.5, "advanced": 0.7, "easy": 0.3, "medium": 0.5, "hard": 0.7}
+                    difficulty_map = {
+                        "beginner": 0.3,
+                        "intermediate": 0.5,
+                        "advanced": 0.7,
+                        "easy": 0.3,
+                        "medium": 0.5,
+                        "hard": 0.7,
+                    }
                     difficulty = difficulty_map.get(difficulty_str.lower(), 0.5)
                 else:
                     difficulty = float(difficulty_str)
-                
+
                 # Cap estimated_minutes at 45
                 estimated_minutes = min(t["estimated_minutes"], 45)
-                
+
                 tasks.append(
                     AtomicTask(
                         id=str(uuid.uuid4()),
@@ -101,7 +118,7 @@ Example:
                         estimated_minutes=estimated_minutes,
                         difficulty=difficulty,
                         prerequisites=t.get("prerequisites", []),
-                        is_review=False
+                        is_review=False,
                     )
                 )
 
@@ -109,9 +126,14 @@ Example:
 
         except Exception as e:
             print(f"[LLMDecomposerReal] Error calling LLM: {e}")
-            response_text = response.text if 'response' in locals() else "No response available"
+            response_text = (
+                response.text if "response" in locals() else "No response available"
+            )
             print(f"[LLMDecomposerReal] Response text: {response_text}")
             # Fallback to simple decomposer
-            from agents.planner.decomposition.simple_decomposer import SimpleGoalDecomposer
+            from agents.planner.decomposition.simple_decomposer import (
+                SimpleGoalDecomposer,
+            )
+
             simple_decomposer = SimpleGoalDecomposer()
             return simple_decomposer.decompose(goal, concepts, available_minutes)

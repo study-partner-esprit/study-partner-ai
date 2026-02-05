@@ -26,7 +26,7 @@ def test_with_pdf():
     print("=" * 50)
 
     # Path to test PDF
-    test_pdf_path = os.path.join('course_ingestion', 'tests', 'test.pdf')
+    test_pdf_path = os.path.join("course_ingestion", "tests", "test.pdf")
 
     if not os.path.exists(test_pdf_path):
         print(f"❌ Test PDF not found at: {test_pdf_path}")
@@ -46,7 +46,7 @@ def test_with_pdf():
     result = run_study_planner(
         pdf_paths=[test_pdf_path],
         learning_goal=learning_goal,
-        available_time=available_time
+        available_time=available_time,
     )
 
     # Display results
@@ -54,16 +54,20 @@ def test_with_pdf():
     print(f"📚 Course ID: {result['course_id']}")
     print(f"📋 Study Plan ID: {result['study_plan_id']}")
     print(f"🎯 Goal: {result['task_graph']['goal']}")
-    print(f"📊 Total estimated time: {result['task_graph']['total_estimated_minutes']} minutes")
+    print(
+        f"📊 Total estimated time: {result['task_graph']['total_estimated_minutes']} minutes"
+    )
     print(f"📝 Number of tasks: {len(result['task_graph']['tasks'])}")
     print()
 
     # Show tasks
     print("📋 Generated Tasks:")
-    for i, task in enumerate(result['task_graph']['tasks'], 1):
+    for i, task in enumerate(result["task_graph"]["tasks"], 1):
         print(f"  {i}. {task['title']}")
-        print(f"     ⏱️  {task['estimated_minutes']} min | 💪 Difficulty: {task['difficulty']}")
-        if task['prerequisites']:
+        print(
+            f"     ⏱️  {task['estimated_minutes']} min | 💪 Difficulty: {task['difficulty']}"
+        )
+        if task["prerequisites"]:
             print(f"     🔗 Prerequisites: {', '.join(task['prerequisites'])}")
         print()
 
@@ -102,12 +106,12 @@ def test_with_existing_course():
     db = DatabaseService()
 
     # Get the most recent course
-    recent_course = db.collection.find_one(sort=[('_id', -1)])
+    recent_course = db.collection.find_one(sort=[("_id", -1)])
     if not recent_course:
         print("❌ No courses found in database")
         return
 
-    course_id = str(recent_course['_id'])
+    course_id = str(recent_course["_id"])
     print(f"📚 Using existing course ID: {course_id}")
 
     # Generate a new study plan for the same course
@@ -115,9 +119,7 @@ def test_with_existing_course():
     available_time = 90
 
     result = run_study_planner_with_course_id(
-        course_id=course_id,
-        learning_goal=new_goal,
-        available_time=available_time
+        course_id=course_id, learning_goal=new_goal, available_time=available_time
     )
 
     print("✅ New study plan generated!")
@@ -144,4 +146,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Error during testing: {e}")
         import traceback
+
         traceback.print_exc()

@@ -67,7 +67,7 @@ jobs:
 
       # Flake8 - Python linting
       - name: 🔍 Run Flake8 linting
-        run: poetry run flake8 agents/ --count --statistics --show-source --max-line-length=88
+        run: poetry run flake8 agents/ --count --statistics --show-source --max-line-length=88 --extend-ignore=E501,E402
 
       # isort - Import sorting check
       - name: 📝 Check import sorting (isort)

@@ -1,6 +1,7 @@
-#building vector store for course materials
+# building vector store for course materials
 import faiss
 import numpy as np
+
 
 class VectorStore:
     """

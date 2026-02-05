@@ -6,13 +6,14 @@ from agents.course_ingestion.normalization.normalizer import normalize_course
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.course_ingestion.normalization.tokenizer import tokenize_subtopics
 
+
 def ingest_course(course_title: str, pdf_files: list):
     all_sections = []
 
     for pdf_path in pdf_files:
-        if pdf_path.lower().endswith('.txt'):
+        if pdf_path.lower().endswith(".txt"):
             # Read text file directly
-            with open(pdf_path, 'r', encoding='utf-8') as f:
+            with open(pdf_path, "r", encoding="utf-8") as f:
                 text = f.read()
         else:
             # Step 1: extract text

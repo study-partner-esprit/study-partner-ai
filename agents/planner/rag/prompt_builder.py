@@ -7,7 +7,9 @@ class PromptBuilder:
     def __init__(self):
         pass
 
-    def build_decomposition_prompt(self, goal: str, concepts: list, available_minutes: int) -> str:
+    def build_decomposition_prompt(
+        self, goal: str, concepts: list, available_minutes: int
+    ) -> str:
         """Build a prompt for task decomposition."""
         context = "\n".join(f"- {c}" for c in concepts)
         prompt = f"""You are a study planner assistant.

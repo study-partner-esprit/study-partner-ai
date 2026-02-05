@@ -1,6 +1,7 @@
 import pytesseract
 from pdf2image import convert_from_path
 
+
 def ocr_pdf(pdf_path: str) -> str:
     """
     Uses OCR to extract text from scanned PDFs.
