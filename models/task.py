@@ -55,6 +55,11 @@ class Task(BaseModel):
         description="Task tags for categorization"
     )
     
+    prerequisites: list[str] = Field(
+        default_factory=list,
+        description="List of task IDs that must be completed before this task"
+    )
+    
     class Config:
         json_schema_extra = {
             "example": {

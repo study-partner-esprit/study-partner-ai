@@ -52,7 +52,7 @@ class SimpleGoalDecomposer:
                         title=f"Study {concept}",
                         description=f"Learn and understand {concept} as part of {goal}",
                         estimated_minutes=30,
-                        difficulty=0.4 + (i * 0.1),  # Increasing difficulty
+                        difficulty=min(1.0, 0.4 + (i * 0.1)),  # Increasing difficulty, capped at 1.0
                         prerequisites=prerequisites,
                     )
                 )

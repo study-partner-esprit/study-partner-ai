@@ -10,6 +10,8 @@ from agents.course_ingestion.agent import ingest_course
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.planner.agent import PlannerAgent
 from agents.planner.models.task_graph import PlannerInput
+from agents.scheduler.agent import SchedulerAgent, SchedulingContext
+from models.task import Task
 from datetime import datetime, timedelta
 import uuid
 
@@ -42,10 +44,7 @@ def run_study_planner(
     # Step 2: Retrieve the normalized course JSON from MongoDB
     print("🔍 Retrieving course data from database...")
     db = DatabaseService()
-    course_data = db.get_course(course_id)
-
-    if not course_data:
-        raise ValueError(f"Could not retrieve course data for ID: {course_id}")
+    course_data = db.get_course_by_id(course_id)
 
     print("✅ Course data retrieved successfully")
 
@@ -85,6 +84,114 @@ def run_study_planner(
     result["course_id"] = course_id
     return result
 
+def run_full_study_workflow(
+    pdf_paths: list[str], learning_goal: str, available_time: int
+) -> dict:
+    """
+    Orchestrate the complete study workflow from PDF to scheduled tasks.
+
+    Args:
+        pdf_paths: List of paths to PDF course materials
+        learning_goal: The learning goal to decompose into tasks
+        available_time: Available study time in minutes
+
+    Returns:
+        Dictionary containing planner output, scheduler output, and metadata
+    """
+    # Step 1-4: Run the planner pipeline (reuse existing logic)
+    planner_result = run_study_planner(pdf_paths, learning_goal, available_time)
+
+    # Step 5: Extract tasks from planner output and convert to Task objects
+    print("🔄 Converting planner tasks to scheduler format...")
+    planner_output = planner_result
+    task_graph = planner_output.get("task_graph", {})
+    atomic_tasks = task_graph.get("tasks", [])
+
+    tasks = []
+    for atomic_task in atomic_tasks:
+        # Convert difficulty from float (0-1) to string categories
+        difficulty_float = atomic_task.get("difficulty", 0.5)
+        if difficulty_float <= 0.3:
+            difficulty_str = "beginner"
+        elif difficulty_float <= 0.7:
+            difficulty_str = "intermediate"
+        else:
+            difficulty_str = "advanced"
+
+        task = Task(
+            task_id=atomic_task["id"],
+            user_id="full_workflow_user",  # Fixed user ID for this workflow
+            title=atomic_task["title"],
+            description=atomic_task["description"],
+            estimated_duration=atomic_task["estimated_minutes"],
+            difficulty=difficulty_str,
+            prerequisites=atomic_task.get("prerequisites", []),
+        )
+        tasks.append(task)
+
+    print(f"✅ Converted {len(tasks)} tasks for scheduling")
+
+    # Step 6: Run the scheduler
+    print("📅 Scheduling study sessions...")
+    scheduler = SchedulerAgent()
+
+    # Create scheduling context with reasonable defaults
+    context = SchedulingContext(
+        calendar_events=[],  # No calendar conflicts for this demo
+        max_minutes_per_day=240,  # 4 hours per day
+    )
+
+    study_plan = scheduler.build_schedule(tasks, context)
+
+    print("✅ Study sessions scheduled successfully")
+    print(f"📊 Total scheduled time: {study_plan.total_minutes} minutes")
+    print(f"📅 Plan spans {study_plan.span_days} days")
+    print(f"🎯 Number of scheduled sessions: {len(study_plan.sessions)}")
+
+    # Step 7: Save the scheduled sessions to the task_scheduling collection
+    print("💾 Saving scheduled sessions to database...")
+    db = DatabaseService()
+    scheduler_data = study_plan.model_dump()
+    scheduler_data["course_id"] = planner_result.get("course_id")
+    scheduling_id = db.save_scheduled_sessions(planner_result.get("study_plan_id"), scheduler_data)
+    print(f"✅ Scheduled sessions saved with ID: {scheduling_id}")
+
+    # Step 8: Return comprehensive result
+    result = {
+        "planner_output": planner_output,
+        "scheduler_output": study_plan.model_dump(),
+        "metadata": {
+            "course_id": planner_result.get("course_id"),
+            "study_plan_id": planner_result.get("study_plan_id"),
+            "scheduling_id": scheduling_id,
+            "total_tasks": len(tasks),
+            "scheduled_sessions": len(study_plan.sessions),
+            "total_scheduled_minutes": study_plan.total_minutes,
+            "plan_span_days": study_plan.span_days,
+            "fallback_used": study_plan.fallback_used,
+            "skipped_tasks": study_plan.skipped_tasks,
+        }
+    }
+
+    return result
+
+    # Step 8: Return comprehensive result
+    result = {
+        "planner_output": planner_output,
+        "scheduler_output": study_plan.model_dump(),
+        "metadata": {
+            "course_id": planner_result.get("course_id"),
+            "study_plan_id": planner_result.get("study_plan_id"),
+            "total_tasks": len(tasks),
+            "scheduled_sessions": len(study_plan.sessions),
+            "total_scheduled_minutes": study_plan.total_minutes,
+            "plan_span_days": study_plan.span_days,
+            "fallback_used": study_plan.fallback_used,
+            "skipped_tasks": study_plan.skipped_tasks,
+        }
+    }
+
+    return result
 
 # Convenience function for testing
 def run_study_planner_with_course_id(
