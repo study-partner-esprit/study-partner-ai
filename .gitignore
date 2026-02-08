@@ -138,3 +138,10 @@ Thumbs.db
 
 # PDF files (if not needed in repo)
 *.pdf
+
+
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.gif

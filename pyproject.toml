@@ -27,6 +27,12 @@ requests = {version = ">=2.31.0,<3.0.0"}
 streamlit = {version = ">=1.53.1,<2.0.0"}
 google-generativeai = {version = ">=0.8.6,<0.9.0"}
 python-dotenv = {version = ">=1.0.0,<2.0.0"}
+jupyter = {version = ">=1.0.0,<2.0.0"}
+matplotlib = {version = ">=3.8.0,<4.0.0"}
+opencv-python = {version = ">=4.8.0,<5.0.0"}
+pandas = {version = ">=2.0.0,<3.0.0"}
+seaborn = {version = ">=0.12.0,<1.0.0"}
+tensorflow = {version = ">=2.15.0,<3.0.0"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=9.0.2,<10.0.0"
