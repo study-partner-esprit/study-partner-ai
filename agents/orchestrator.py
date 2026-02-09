@@ -11,6 +11,9 @@ from agents.course_ingestion.services.database_service import DatabaseService
 from agents.planner.agent import PlannerAgent
 from agents.planner.models.task_graph import PlannerInput
 from agents.scheduler.agent import SchedulerAgent, SchedulingContext
+from agents.scheduler.services.schedule_updater import ScheduleUpdater
+from agents.coach.agent import run_coach
+from agents.coach.models.schemas import CoachInput, FocusState
 from models.task import Task
 from datetime import datetime, timedelta
 import uuid
@@ -253,4 +256,83 @@ def run_study_planner_with_course_id(
     result = planner_output.model_dump()
     result["study_plan_id"] = study_plan_id
     result["course_id"] = course_id
+    return result
+
+
+def run_coaching_session(
+    focus_state: str,
+    focus_score: float,
+    fatigue_probability: float,
+    affective_state: str,
+    ignored_count: int = 0,
+    do_not_disturb: bool = False,
+    is_late: bool = False
+) -> dict:
+    """
+    Run a coaching session with real-time student monitoring.
+
+    This function simulates a coaching session where the Coach agent:
+    1. Monitors student's current state (focus, fatigue, affect)
+    2. Provides appropriate coaching interventions
+    3. Can autonomously modify the schedule (add breaks, reschedule tasks)
+
+    Args:
+        focus_state: Current focus state ("Focused", "Drifting", "Lost")
+        focus_score: Focus score (0.0 to 1.0)
+        fatigue_probability: Probability of fatigue (0.0 to 1.0)
+        affective_state: Current emotional state
+        ignored_count: How many times coaching was ignored
+        do_not_disturb: Whether DND mode is active
+
+    Returns:
+        Dictionary with coaching action and any schedule changes applied
+    """
+    print("🤖 Starting coaching session...")
+
+    # Create Coach input with current student state
+    coach_input = CoachInput(
+        scheduled_tasks=[],  # Will be populated by Coach agent from DB
+        current_time=datetime.now(),
+        focus_state=FocusState(state=focus_state, score=focus_score),
+        fatigue_probability=fatigue_probability,
+        affective_state=affective_state,
+        ignored_count=ignored_count,
+        do_not_disturb=do_not_disturb,
+        is_late=is_late
+    )
+
+    # Run Coach agent
+    print("🧠 Coach analyzing student state...")
+    coach_action = run_coach(coach_input)
+
+    result = {
+        "coach_action": coach_action.model_dump(),
+        "schedule_modified": False,
+        "modifications": []
+    }
+
+    # Check if Coach requested schedule changes
+    if coach_action.schedule_changes:
+        print("📅 Coach requested schedule modification...")
+
+        # Apply schedule changes
+        schedule_updater = ScheduleUpdater()
+        success = schedule_updater.apply_schedule_change(coach_action.schedule_changes)
+
+        if success:
+            result["schedule_modified"] = True
+            result["modifications"].append({
+                "action": coach_action.schedule_changes.action,
+                "details": coach_action.schedule_changes.model_dump()
+            })
+            print(f"✅ Schedule updated: {coach_action.schedule_changes.action}")
+        else:
+            print("❌ Failed to apply schedule changes")
+
+    # Log the coaching intervention
+    print(f"💬 Coach Action: {coach_action.action_type}")
+    if coach_action.message:
+        print(f"   Message: {coach_action.message}")
+    print(f"   Reasoning: {coach_action.reasoning}")
+
     return result

@@ -26,7 +26,7 @@ def test_planner_to_scheduler_pipeline():
         user_goal="Learn Python basics",
         available_time_minutes=120,
         course_context=course_context,
-    )
+    ) 
 
     assert len(tasks) > 0
 

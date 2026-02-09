@@ -12,7 +12,7 @@ from pathlib import Path
 # Add the agents directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orchestrator import run_full_study_workflow
+from agents.orchestrator import run_full_study_workflow
 
 
 @pytest.mark.integration
