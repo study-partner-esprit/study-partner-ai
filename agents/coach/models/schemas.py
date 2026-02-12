@@ -1,6 +1,9 @@
 from pydantic import BaseModel
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, TYPE_CHECKING, Any
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from services.signal_processing_service.signal_snapshot import SignalSnapshot
 
 
 class ScheduledTask(BaseModel):
@@ -13,6 +16,11 @@ class ScheduledTask(BaseModel):
 
 class FocusState(BaseModel):
     state: Literal["Focused", "Drifting", "Lost"]
+    score: float
+
+
+class FatigueState(BaseModel):
+    state: Literal["Alert", "Moderate", "High", "Critical"]
     score: float
 
 
@@ -29,13 +37,14 @@ class CoachInput(BaseModel):
     scheduled_tasks: List[ScheduledTask]
     current_time: datetime
     focus_state: FocusState
-    fatigue_probability: float
+    fatigue_state: FatigueState
     affective_state: Literal[
         "engaged", "frustrated", "stressed", "bored", "confident"
     ]
     ignored_count: int = 0
     do_not_disturb: bool = False
     is_late: bool = False
+    signals: Optional[Any] = None  # SignalSnapshot from ML models
 
 
 class CoachAction(BaseModel):
