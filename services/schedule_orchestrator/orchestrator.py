@@ -25,13 +25,13 @@ class ScheduleOrchestrator:
     
     def __init__(self):
         """Initialize the schedule orchestrator with MongoDB connection."""
-        mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+        mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
         db_name = os.getenv("MONGO_DB_NAME", "study_partner")
         
         self.client = MongoClient(mongo_uri)
         self.db = self.client[db_name]
         self.task_scheduling_collection = self.db["task_scheduling"]
-        self.study_plan_collection = self.db["study_plans"]
+        self.study_plan_collection = self.db["studyplans"]  # Match Mongoose pluralization
         self.schedule_history_collection = self.db["schedule_history"]
     
     def process_coach_action(

@@ -50,7 +50,7 @@ class PlannerInput(BaseModel):
     Contains all information needed to generate a personalized study plan.
     """
 
-    goal: str = Field(..., description="Main learning goal")
+    goal: Optional[str] = Field(default=None, description="Main learning goal (optional if course_knowledge provided)")
     deadline_iso: str = Field(..., description="Deadline in ISO 8601 format")
     available_minutes: int = Field(
         ..., gt=0, description="Total available time in minutes"
@@ -68,6 +68,16 @@ class PlannerInput(BaseModel):
     tokenization_settings: Optional[Dict[str, Any]] = Field(
         default=None, description="Settings for tokenization"
     )
+
+    @field_validator("goal", "course_knowledge")
+    def validate_goal_or_course(cls, v, info):
+        """Validate that either goal or course_knowledge is provided."""
+        if info.field_name == "goal" and v is None:
+            # Check if course_knowledge is provided
+            course_knowledge = info.data.get("course_knowledge")
+            if not course_knowledge:
+                raise ValueError("Either 'goal' or 'course_knowledge' must be provided")
+        return v
 
     @field_validator("deadline_iso")
     def validate_deadline(cls, v):

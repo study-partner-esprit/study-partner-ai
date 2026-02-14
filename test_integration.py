@@ -95,7 +95,7 @@ def main():
     if all_passed:
         print("\n🎉 All tests passed! System is ready.")
         print("\nNext steps:")
-        print("1. Start the FastAPI service: python api_service.py")
+        print("1. Start the FastAPI service: poetry run python services/api/main.py")
         print("2. Test the HTTP endpoint: curl http://localhost:8000/health")
         print("3. Start the Express backend")
         return 0

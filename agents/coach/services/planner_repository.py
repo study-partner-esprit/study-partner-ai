@@ -3,7 +3,7 @@ from pymongo import MongoClient
 from agents.coach.models.schemas import ScheduledTask
 
 
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "study_partner")
 TASK_SCHEDULING_COLLECTION = os.getenv("TASK_SCHEDULING_COLLECTION", "task_scheduling")
 STUDY_PLAN_COLLECTION = os.getenv("STUDY_PLAN_COLLECTION", "study_plans")

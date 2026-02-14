@@ -36,9 +36,6 @@ def create_study_plan(goal: str, available_time: int, subject_json: str = "") ->
             import json
             import re
             try:
-                # Clean up JSON input
-                cleaned_json = subject_json.strip()
-                
                 # Remove BOM if present
                 if cleaned_json.startswith('\ufeff'):
                     cleaned_json = cleaned_json[1:]

@@ -14,16 +14,20 @@ This service implements a multi-agent system with:
 
 ```
 study-partner-ai/
-├─ main.py                    # FastAPI entry point
-├─ config/                    # Global settings & constants
-├─ models/                    # Shared domain models
-├─ orchestrator/              # Meta-agent orchestration
+├─ services/
+│   └─ api/
+│       └─ main.py            # FastAPI entry point
 ├─ agents/                    # Modular agent implementations
-│   ├─ planner/
-│   ├─ coach/
-│   └─ evaluator/
-├─ services/                  # Shared services (DB, logging, signals)
-└─ utils/                     # Helper functions
+│   ├─ planner/               # Study plan decomposition
+│   ├─ coach/                 # Real-time coaching decisions
+│   ├─ scheduler/             # Task scheduling with constraints
+│   └─ course_ingestion/      # Course material processing
+├─ services/                  # Shared services
+│   ├─ ai_orchestrator/       # Agent coordination
+│   ├─ signal_processing_service/ # ML signal collection
+│   └─ schedule_orchestrator/ # Schedule management
+├─ models/                    # Shared domain models
+└─ ML/                        # Machine learning models
 ```
 
 ## Setup
@@ -32,8 +36,8 @@ study-partner-ai/
 # Install dependencies
 poetry install
 
-# Run the service
-poetry run python main.py
+# Run the AI service
+poetry run python services/api/main.py
 ```
 
 ## API

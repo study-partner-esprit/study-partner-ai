@@ -10,7 +10,7 @@ class LLMDecomposerReal:
     Assumes LM Studio exposes a local REST API.
     """
 
-    def __init__(self, endpoint: str = "http://localhost:1234/v1/chat/completions"):
+    def __init__(self, endpoint: str = "http://127.0.0.1:1234/v1/chat/completions"):
         """
         :param endpoint: LM Studio local API URL
         """
@@ -37,10 +37,12 @@ Relevant concepts:
 Break this goal into atomic study tasks. Each task should be <= 45 minutes, include review sessions, and respect prerequisites. Total time should fit within {available_minutes} minutes.
 
 Return ONLY a valid JSON array with this exact format:
-[{{"title": "task name", "description": "task description", "estimated_minutes": 30, "difficulty": 0.5, "prerequisites": []}}]
+[{{"title": "task name", "description": "task description", "estimated_minutes": 30, "difficulty": 0.5, "prerequisites": ["prerequisite task title"]}}]
+
+IMPORTANT: Prerequisites must be an array of STRINGS (task titles), not objects!
 
 Example:
-[{{"title": "Learn Vector Operations", "description": "Study basic vector addition, scalar multiplication", "estimated_minutes": 30, "difficulty": 0.4, "prerequisites": []}}]"""
+[{{"title": "Learn Vector Operations", "description": "Study basic vector addition, scalar multiplication", "estimated_minutes": 30, "difficulty": 0.4, "prerequisites": []}}, {{"title": "Apply Vector Operations", "description": "Practice vector operations with examples", "estimated_minutes": 30, "difficulty": 0.5, "prerequisites": ["Learn Vector Operations"]}}]"""
 
         # Call LM Studio API
         try:
@@ -52,7 +54,7 @@ Example:
                     "max_tokens": 1500,
                     "temperature": 0.7,
                 },
-                timeout=60,
+                timeout=120,  # Increased timeout for slower models
             )
             response.raise_for_status()
             result_json = response.json()
@@ -106,9 +108,23 @@ Example:
                     difficulty = difficulty_map.get(difficulty_str.lower(), 0.5)
                 else:
                     difficulty = float(difficulty_str)
+                
+                # Clamp difficulty to valid range (0.0-1.0)
+                difficulty = max(0.0, min(1.0, difficulty))
 
                 # Cap estimated_minutes at 45
                 estimated_minutes = min(t["estimated_minutes"], 45)
+
+                # Normalize prerequisites to strings (LLM sometimes returns objects)
+                prerequisites = t.get("prerequisites", [])
+                normalized_prereqs = []
+                for prereq in prerequisites:
+                    if isinstance(prereq, dict):
+                        # Extract title from object: {"title": "Task Name"}
+                        normalized_prereqs.append(prereq.get("title", ""))
+                    else:
+                        # Already a string
+                        normalized_prereqs.append(prereq)
 
                 tasks.append(
                     AtomicTask(
@@ -117,13 +133,21 @@ Example:
                         description=t["description"],
                         estimated_minutes=estimated_minutes,
                         difficulty=difficulty,
-                        prerequisites=t.get("prerequisites", []),
+                        prerequisites=normalized_prereqs,
                         is_review=False,
                     )
                 )
 
-            return tasks
+            # Validate and fix prerequisites - only keep prerequisites that exist as task titles
+            task_titles = {task.title for task in tasks}
+            for task in tasks:
+                task.prerequisites = [
+                    prereq for prereq in task.prerequisites 
+                    if prereq in task_titles
+                ]
 
+            return tasks
+            
         except Exception as e:
             print(f"[LLMDecomposerReal] Error calling LLM: {e}")
             response_text = (

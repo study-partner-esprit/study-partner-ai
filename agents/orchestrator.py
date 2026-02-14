@@ -20,19 +20,21 @@ import uuid
 
 
 def run_study_planner(
-    pdf_paths: list[str], learning_goal: str, available_time: int
+    pdf_paths: list[str], learning_goal: str = None, available_time: int = None
 ) -> dict:
     """
     Orchestrate the complete study planning pipeline.
 
     Args:
         pdf_paths: List of paths to PDF course materials
-        learning_goal: The learning goal to decompose into tasks
-        available_time: Available study time in minutes
+        learning_goal: Optional learning goal (if not provided, will be derived from course)
+        available_time: Available study time in minutes (default: 480 = 8 hours)
 
     Returns:
         Dictionary containing the planner output with task graph
     """
+    if available_time is None:
+        available_time = 480  # Default 8 hours
     # Step 1: Ingest the course materials
     print("📚 Ingesting course materials...")
     course_title = "Course Materials"  # Simple title for ingested content
@@ -58,7 +60,7 @@ def run_study_planner(
     deadline = datetime.now() + timedelta(days=7)
 
     planner_input = PlannerInput(
-        goal=learning_goal,
+        goal=learning_goal,  # Can be None - planner will derive from course
         deadline_iso=deadline.isoformat(),
         available_minutes=available_time,
         user_id=str(uuid.uuid4()),  # Generate a unique user ID for this session
@@ -88,19 +90,22 @@ def run_study_planner(
     return result
 
 def run_full_study_workflow(
-    pdf_paths: list[str], learning_goal: str, available_time: int
+    pdf_paths: list[str], learning_goal: str = None, available_time: int = None
 ) -> dict:
     """
     Orchestrate the complete study workflow from PDF to scheduled tasks.
 
     Args:
         pdf_paths: List of paths to PDF course materials
-        learning_goal: The learning goal to decompose into tasks
-        available_time: Available study time in minutes
+        learning_goal: Optional learning goal (if not provided, will be derived from course)
+        available_time: Available study time in minutes (default: 480 = 8 hours)
 
     Returns:
         Dictionary containing planner output, scheduler output, and metadata
     """
+    if available_time is None:
+        available_time = 480  # Default 8 hours
+
     # Step 1-4: Run the planner pipeline (reuse existing logic)
     planner_result = run_study_planner(pdf_paths, learning_goal, available_time)
 

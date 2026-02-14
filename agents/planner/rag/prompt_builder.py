@@ -10,7 +10,7 @@ class SchedulingService:
     """Service for saving and retrieving study plans from MongoDB."""
     
     def __init__(self):
-        mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+        mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
         db_name = os.getenv("MONGO_DB_NAME", "study_partner")
         
         self.client = MongoClient(mongo_uri)

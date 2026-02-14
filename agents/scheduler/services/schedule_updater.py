@@ -18,7 +18,7 @@ class ScheduleUpdater:
     """
 
     def __init__(self):
-        self.mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+        self.mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
         self.db_name = os.getenv("DB_NAME", "study_partner")
         self.collection_name = os.getenv("TASK_SCHEDULING_COLLECTION", "task_scheduling")
 

@@ -1,4 +1,4 @@
-from agents.planner.planner import PlannerAgent
+from agents.planner.agent import PlannerAgent
 from agents.scheduler.agent import SchedulerAgent, SchedulingContext
 
 

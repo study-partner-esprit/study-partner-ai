@@ -35,7 +35,6 @@ seaborn = {version = ">=0.12.0,<1.0.0"}
 tensorflow = {version = ">=2.15.0,<3.0.0"}
 fastapi = {version = ">=0.115.0,<1.0.0"}
 uvicorn = {version = ">=0.34.0,<1.0.0"}
-dlib = {version = ">=19.24.0,<20.0.0"}
 scipy = {version = ">=1.11.0,<2.0.0"}
 mediapipe = {version = ">=0.10.0,<1.0.0"}
 

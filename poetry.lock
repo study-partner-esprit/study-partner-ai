@@ -944,17 +944,6 @@ files = [
 ]
 
 [[package]]
-name = "dlib"
-version = "19.24.9"
-description = "A toolkit for making real world machine learning and data analysis applications"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "dlib-19.24.9.tar.gz", hash = "sha256:211a233d1883f6340719b8f5c6a51fad7446702a1d2c7024e4a5053e599f7fb5"},
-]
-
-[[package]]
 name = "dnspython"
 version = "2.8.0"
 description = "DNS toolkit"
@@ -7070,4 +7059,4 @@ dev = ["pytest", "setuptools"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11,<3.15"
-content-hash = "5e37bc77be60bf8f1c516a822e076f79d3a210182d6e48418c0d81425fc39315"
+content-hash = "18acc1b189bb4d9a2b07eed8ac64fc363842b8d3b0ab32e84e8b01738ed858a4"

@@ -3,25 +3,49 @@ import os
 import re
 from typing import Dict
 from pathlib import Path
-
-import google.generativeai as genai
+import requests
 from dotenv import load_dotenv
 
 # Load .env from project root
 # enrichment -> course_ingestion -> agents -> study-partner-ai
 env_path = Path(__file__).resolve().parents[3] / ".env"
-load_dotenv(env_path)
+load_dotenv()
 
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError(
-        f"GEMINI_API_KEY not found in environment. Checked .env at: {env_path}"
-    )
-
-genai.configure(api_key=api_key)
+# Use LM Studio instead of Google Gemini
+LM_STUDIO_URL = "http://127.0.0.1:1234/v1/chat/completions"
 
 
-MODEL_NAME = "gemini-2.5-flash"
+def call_llm(prompt: str, system_prompt: str = None) -> str:
+    """Call LM Studio API for text generation."""
+    try:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        response = requests.post(
+            LM_STUDIO_URL,
+            json={
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 2000,
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+        else:
+            print(f"LM Studio API error: {response.status_code} - {response.text}")
+            return ""
+            
+    except Exception as e:
+        print(f"Error calling LM Studio: {e}")
+        return ""
+
+
+MODEL_NAME = "lm-studio"  # Using LM Studio
 
 
 SYSTEM_PROMPT = """
@@ -152,7 +176,7 @@ def clean_metadata(text: str) -> str:
 
 def enrich_subtopic_with_llm(title: str, text: str) -> Dict:
     """
-    Enrich one subtopic using Gemini.
+    Enrich one subtopic using LM Studio.
     Pre-cleans input and post-cleans output to ensure metadata removal.
     """
 
@@ -160,11 +184,9 @@ def enrich_subtopic_with_llm(title: str, text: str) -> Dict:
     cleaned_input = clean_metadata(text)
     cleaned_title = clean_metadata(title)
 
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME, system_instruction=SYSTEM_PROMPT
-    )
-
     prompt = f"""
+{SYSTEM_PROMPT}
+
 Analyze and clean the following educational content.
 
 SUBTOPIC TITLE:
@@ -182,10 +204,20 @@ INSTRUCTIONS:
 Return JSON now:
 """
 
-    response = model.generate_content(prompt)
-    raw = response.text.strip()
+    raw = call_llm(prompt)
+    
+    if not raw:
+        print("LLM enrichment failed, fallback used.")
+        return {
+            "cleaned_text": clean_metadata(text),
+            "key_concepts": [],
+            "definitions": [],
+            "formulas": [],
+            "examples": [],
+        }
 
-    # Gemini sometimes wraps JSON in ```json
+    # Clean up the response
+    raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
         raw = raw.replace("json", "", 1).strip()
@@ -216,9 +248,9 @@ Return JSON now:
         if "examples" in data and isinstance(data["examples"], list):
             data["examples"] = [clean_metadata(e) for e in data["examples"] if e]
 
-    except Exception:
-        print("LLM enrichment failed, fallback used.")
-        print(raw)
+    except Exception as e:
+        print(f"LLM enrichment failed: {e}, fallback used.")
+        print(f"Raw response: {raw}")
 
         return {
             "cleaned_text": clean_metadata(text),

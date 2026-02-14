@@ -134,7 +134,12 @@ Thumbs.db
 *.temp
 
 # Logs
+logs/
 *.log
+*.pid
+
+# Uploads
+uploads/
 
 # PDF files (if not needed in repo)
 *.pdf
