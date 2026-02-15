@@ -339,6 +339,158 @@ async def get_user_plans(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to fetch plans: {str(e)}")
 
 
+# ==================== Scheduler Endpoints ====================
+
+class SchedulerRequest(BaseModel):
+    user_id: str
+    tasks: List[dict]  # List of task objects from Node.js
+    calendar_events: Optional[List[dict]] = []
+    max_minutes_per_day: int = 240
+    allow_late_night: bool = False
+
+
+def mix_tasks_intelligently(tasks: List) -> List:
+    """
+    Mix tasks from different subjects/plans to avoid scheduling all tasks 
+    from the same subject consecutively.
+    
+    Strategy:
+    1. Group tasks by tags/subject (first tag indicates subject/course)
+    2. Interleave tasks from different groups (round-robin)
+    3. Maintain tasks without tags at the end
+    
+    Args:
+        tasks: List of SchedulerTask objects
+    
+    Returns:
+        Reordered list with mixed tasks
+    """
+    from collections import defaultdict
+    
+    # Group tasks by their primary tag (subject/course)
+    groups = defaultdict(list)
+    no_tag_tasks = []
+    
+    for task in tasks:
+        if task.tags and len(task.tags) > 0:
+            # Use first tag as grouping key (usually subject/course)
+            primary_tag = task.tags[0]
+            groups[primary_tag].append(task)
+        else:
+            no_tag_tasks.append(task)
+    
+    # If there's only one group or no groups, return original order
+    if len(groups) <= 1:
+        return tasks
+    
+    # Mix tasks using round-robin from each group
+    mixed_tasks = []
+    group_lists = list(groups.values())
+    max_length = max(len(group) for group in group_lists)
+    
+    for i in range(max_length):
+        for group in group_lists:
+            if i < len(group):
+                mixed_tasks.append(group[i])
+    
+    # Add tasks without tags at the end
+    mixed_tasks.extend(no_tag_tasks)
+    
+    logger.info(f"Task mixing: {len(groups)} groups found, mixed {len(mixed_tasks)} tasks")
+    for tag, group in groups.items():
+        logger.info(f"  Group '{tag}': {len(group)} tasks")
+    
+    return mixed_tasks
+
+
+@app.post("/api/ai/scheduler/schedule")
+async def schedule_tasks(request: SchedulerRequest):
+    """
+    Schedule existing tasks using the AI scheduler agent.
+    
+    Args:
+        request: SchedulerRequest with tasks and scheduling constraints
+    
+    Returns:
+        Schedule with sessions, total time, and metadata
+    """
+    try:
+        from agents.scheduler.agent import SchedulerAgent, SchedulingContext
+        from models.task import Task as SchedulerTask
+        
+        # Convert Node.js tasks to scheduler Task objects
+        scheduler_tasks = []
+        for task in request.tasks:
+            # Map priority to difficulty (0-1 scale)
+            priority = task.get('priority', 'medium')
+            if priority == 'low':
+                difficulty = 0.3
+            elif priority == 'high':
+                difficulty = 0.8
+            else:
+                difficulty = 0.5
+            
+            scheduler_task = SchedulerTask(
+                task_id=str(task.get('_id', task.get('id', ''))),
+                user_id=request.user_id,
+                title=task.get('title', 'Untitled Task'),
+                description=task.get('description', ''),
+                priority=priority,
+                difficulty=str(difficulty),
+                estimated_duration=task.get('estimatedTime', 30),
+                status=task.get('status', 'todo'),
+                tags=task.get('tags', []),
+                prerequisites=task.get('prerequisites', []),
+            )
+            scheduler_tasks.append(scheduler_task)
+        
+        # Mix tasks from different subjects/courses intelligently
+        mixed_tasks = mix_tasks_intelligently(scheduler_tasks)
+        
+        # Create  scheduling context
+        context = SchedulingContext(
+            calendar_events=request.calendar_events,
+            max_minutes_per_day=request.max_minutes_per_day,
+            allow_late_night=request.allow_late_night,
+        )
+        
+        # Build schedule with mixed tasks
+        scheduler = SchedulerAgent()
+        study_plan = scheduler.build_schedule(
+            tasks=mixed_tasks,
+            context=context,
+        )
+        
+        # Convert sessions to frontend format
+        sessions = []
+        for session in study_plan.sessions:
+            sessions.append({
+                'taskId': session.task_id,
+                'title': next((t.title for t in scheduler_tasks if t.task_id == session.task_id), 'Unknown'),
+                'startTime': session.start_datetime.isoformat(),
+                'endTime': session.end_datetime.isoformat(),
+                'estimatedMinutes': int((session.end_datetime - session.start_datetime).total_seconds() / 60),
+                'slotScore': session.slot_score,
+            })
+        
+        return {
+            'success': True,
+            'schedule': {
+                'sessions': sessions,
+                'totalMinutes': study_plan.total_minutes,
+                'spanDays': study_plan.span_days,
+                'skippedTasks': study_plan.skipped_tasks,
+                'fallbackUsed': study_plan.fallback_used,
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Task scheduling failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to schedule tasks: {str(e)}")
+
+
 # ==================== Coach Endpoints ====================
 
 @app.post("/api/ai/coach/decision")

@@ -66,7 +66,7 @@ class SchedulerAgent:
         fallback_used = False
         
         # Build title→id mapping for prerequisite resolution
-        title_to_id = {task.title: task.id for task in tasks}
+        title_to_id = {task.title: task.task_id for task in tasks}
         
         # Start from tomorrow 8:00 AM
         current_date = datetime.now().replace(
@@ -115,14 +115,14 @@ class SchedulerAgent:
             # Move task index forward only if we've scheduled something
             while (
                 task_index < len(tasks)
-                and tasks[task_index].id in scheduled_task_ids
+                and tasks[task_index].task_id in scheduled_task_ids
             ):
                 task_index += 1
         
         # Any remaining tasks couldn't be scheduled
         for task in tasks:
-            if task.id not in scheduled_task_ids:
-                skipped_tasks.add(task.id)
+            if task.task_id not in scheduled_task_ids:
+                skipped_tasks.add(task.task_id)
         
         span_days = min(day_count, len(set(s.start_datetime.date() for s in sessions)))
         span_days = max(1, span_days)
@@ -202,20 +202,20 @@ class SchedulerAgent:
             # Check if task has unmet prerequisites
             if not self._prerequisites_met(task, scheduled_task_ids, title_to_id):
                 logger.warning(
-                    f"Skipping task {task.id}: unmet prerequisites {task.prerequisites}"
+                    f"Skipping task {task.task_id}: unmet prerequisites {task.prerequisites}"
                 )
-                skipped_tasks.add(task.id)
+                skipped_tasks.add(task.task_id)
                 working_task_index += 1
                 continue
             
             # Skip if already scheduled
-            if task.id in scheduled_task_ids:
+            if task.task_id in scheduled_task_ids:
                 working_task_index += 1
                 continue
             
             # Try to fit task in available slots
             slot = free_slots[slot_index]
-            duration = task.estimated_minutes
+            duration = task.estimated_duration
             
             start = slot.start
             end = start + timedelta(minutes=duration)
@@ -228,7 +228,7 @@ class SchedulerAgent:
             
             # Task fits! Schedule it
             session = ScheduledSession(
-                task_id=task.id,
+                task_id=task.task_id,
                 start_datetime=start,
                 end_datetime=end,
                 break_after_minutes=5,
@@ -236,7 +236,7 @@ class SchedulerAgent:
                 scheduled=True,
             )
             sessions.append(session)
-            scheduled_task_ids.add(task.id)
+            scheduled_task_ids.add(task.task_id)
             daily_minutes += duration
             
             # Move slot cursor past break time
@@ -311,13 +311,13 @@ class SchedulerAgent:
             # Check prerequisites
             if not self._prerequisites_met(task, scheduled_task_ids, title_to_id):
                 logger.warning(
-                    f"Skipping task {task.id} in fallback: unmet prerequisites"
+                    f"Skipping task {task.task_id} in fallback: unmet prerequisites"
                 )
-                skipped_tasks.add(task.id)
+                skipped_tasks.add(task.task_id)
                 working_task_index += 1
                 continue
             
-            if task.id in scheduled_task_ids:
+            if task.task_id in scheduled_task_ids:
                 working_task_index += 1
                 continue
             
@@ -330,7 +330,7 @@ class SchedulerAgent:
             end_time = current_time + timedelta(minutes=session_duration)
             
             session = ScheduledSession(
-                task_id=task.id,
+                task_id=task.task_id,
                 start_datetime=current_time,
                 end_datetime=end_time,
                 break_after_minutes=self.FALLBACK_BREAK_MINUTES,
@@ -338,7 +338,7 @@ class SchedulerAgent:
                 scheduled=True,
             )
             sessions.append(session)
-            scheduled_task_ids.add(task.id)
+            scheduled_task_ids.add(task.task_id)
             daily_minutes += session_duration
             
             # Move to next slot (study + break)
