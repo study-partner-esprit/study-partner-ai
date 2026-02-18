@@ -25,6 +25,12 @@ def normalize_busy_slots(raw_events: List[dict]) -> List[TimeSlot]:
             start = datetime.fromisoformat(ev["start"])
             end = datetime.fromisoformat(ev["end"])
             
+            # Convert to naive datetime (assume UTC if timezone-aware)
+            if start.tzinfo is not None:
+                start = start.replace(tzinfo=None)
+            if end.tzinfo is not None:
+                end = end.replace(tzinfo=None)
+            
             if start >= end:
                 logger.warning(f"Invalid event: start {start} >= end {end}")
                 continue

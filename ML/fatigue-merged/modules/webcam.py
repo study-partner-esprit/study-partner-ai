@@ -56,11 +56,17 @@ class Webcam:
         Get a single frame with enhanced error handling and recovery.
         Returns: (frame_bgr, frame_rgb) or (None, None) on failure
         """
-        ret, frame_bgr = self.cap.read()
+        # Use grab() for non-blocking read, then retrieve()
+        grabbed = self.cap.grab()
+        if not grabbed:
+            print(f"Camera grab failed at frame {self.frame_count}")
+            return self._attempt_recovery()
+
+        ret, frame_bgr = self.cap.retrieve()
         current_time = time.time()
 
         if not ret or frame_bgr is None:
-            print(f"Camera read failed at frame {self.frame_count}")
+            print(f"Camera retrieve failed at frame {self.frame_count}")
             return self._attempt_recovery()
 
         self.frame_count += 1

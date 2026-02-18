@@ -54,7 +54,7 @@ def main():
         # MediaPipe Face Landmarker setup
         print("🎯 Setting up MediaPipe face detection...")
         options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path='face_landmarker.task'),
+            base_options=BaseOptions(model_asset_path='ML/fatigue-merged/face_landmarker.task'),
             running_mode=mp.tasks.vision.RunningMode.IMAGE,
             num_faces=1,
             min_face_detection_confidence=0.5,
@@ -253,7 +253,9 @@ def main():
                     if suggest_break:
                         status += " | ⚠️  TAKE A BREAK!"
 
-                    print(f"\r{status}", end="", flush=True)
+                    # Print status every 10 frames to reduce output
+                    if frame_count % 10 == 0:
+                        print(f"\r{status}", end="", flush=True)
 
                     # Small delay to prevent CPU hogging
                     time.sleep(0.01)
