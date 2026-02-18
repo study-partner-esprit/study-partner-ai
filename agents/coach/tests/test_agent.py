@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from agents.coach.agent import run_coach
 from agents.coach.models.schemas import (
-    CoachInput, ScheduledTask, FocusState
+    CoachInput, ScheduledTask, FocusState, FatigueState
 )
 
 
@@ -28,7 +28,7 @@ def test_coach_pipeline(mock_call_gemini, mock_get_tasks):
         scheduled_tasks=[],  # Will be overridden
         current_time=datetime.now(),
         focus_state=FocusState(state="Drifting", score=0.4),
-        fatigue_probability=0.3,
+        fatigue_state=FatigueState(state="Moderate", score=0.3),
         affective_state="engaged",
         ignored_count=0,
         do_not_disturb=False

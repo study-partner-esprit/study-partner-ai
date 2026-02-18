@@ -10,6 +10,7 @@ def apply_rules(input_data: CoachInput) -> Optional[CoachAction]:
     1. Never interrupt deep focus (especially with high ML confidence)
     2. Respect user autonomy (DND, multiple ignores)
     3. Enforce safety boundaries
+    4. Intervene on a declining focus trend
     
     Returns:
         CoachAction if a rule fires, None if LLM should decide
@@ -76,6 +77,40 @@ def apply_rules(input_data: CoachInput) -> Optional[CoachAction]:
                 message="You're showing signs of high fatigue. Consider taking a short break.",
                 reasoning=f"High fatigue detected (score: {input_data.fatigue_state.score:.2f}). Suggesting break to prevent burnout."
             )
-    
+
+    # Rule 6: Declining focus trend — proactively nudge before state deteriorates
+    # Fires when: Drifting state AND focus_trend < -0.4 (strong negative slope)
+    declining = _rule_declining_trend(input_data)
+    if declining is not None:
+        return declining
+
     # No hard rule fired - let LLM decide
     return None
+
+
+def _rule_declining_trend(input_data: CoachInput) -> Optional[CoachAction]:
+    """
+    Fire when focus is Drifting AND the EMA trend is strongly negative.
+
+    Requires `signals.focus_trend` to be populated by the signal
+    processing pipeline (EMA linear regression over a 5-minute window).
+
+    Threshold: focus_trend < -0.4 (score dropping ~0.4 per normalised unit).
+    """
+    if input_data.focus_state.state != "Drifting":
+        return None
+    if input_data.signals is None:
+        return None
+
+    focus_trend: float | None = getattr(input_data.signals, "focus_trend", None)
+    if focus_trend is None or focus_trend >= -0.4:
+        return None
+
+    return CoachAction(
+        action_type="nudge",
+        message="Your focus seems to be slipping. Would you like to take a moment to re-centre before continuing?",
+        reasoning=(
+            f"Focus trend is {focus_trend:.3f} (threshold -0.40). "
+            "Proactive nudge issued while still in Drifting state to prevent transition to Lost."
+        ),
+    )

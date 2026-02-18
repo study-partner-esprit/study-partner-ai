@@ -4,7 +4,7 @@ This module defines the data structure for ML-based user state signals.
 """
 
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -39,6 +39,15 @@ class SignalSnapshot(BaseModel):
         ge=0.0, le=1.0, description="Fatigue detection confidence (0-1)"
     )
 
+    # Short-term focus trend — slope of linear regression over a recent window
+    # (e.g. 5 minutes).  Negative = focus declining, Positive = improving.
+    # Populated by SignalRepository.compute_focus_trend().
+    focus_trend: Optional[float] = Field(
+        default=None,
+        description="Linear trend slope of focus_score over the recent window. "
+                    "Negative = declining focus.",
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -50,5 +59,7 @@ class SignalSnapshot(BaseModel):
                 "fatigue_state": "Alert",
                 "fatigue_score": 0.15,
                 "fatigue_confidence": 0.90,
+                "focus_trend": -0.12,
             }
         }
+

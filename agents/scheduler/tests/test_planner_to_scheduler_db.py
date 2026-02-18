@@ -19,6 +19,7 @@ from models.task import Task
 TEST_COURSE_ID = "6984fed077f336f5b99c9c45"
 
 
+@pytest.mark.skip(reason="Integration test: requires live MongoDB with seeded course document")
 @pytest.mark.integration
 class TestPlannerToSchedulerIntegration:
     """Integration tests for the complete planner-to-scheduler pipeline."""

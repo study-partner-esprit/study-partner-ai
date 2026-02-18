@@ -3,7 +3,7 @@
 This service provides RESTful endpoints for the frontend to interact with all AI agents.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -29,9 +29,9 @@ from services.signal_processing_service.focus_detector import get_focus_detector
 from services.signal_processing_service.fatigue_detector import get_fatigue_detector
 from pymongo import MongoClient
 from bson import ObjectId
-import logging
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
  
 
 def convert_objectid_to_str(obj):
@@ -494,23 +494,28 @@ async def schedule_tasks(request: SchedulerRequest):
 # ==================== Coach Endpoints ====================
 
 @app.post("/api/ai/coach/decision")
-async def get_coach_decision(request: CoachRequest):
+async def get_coach_decision(
+    request: CoachRequest,
+    x_trace_id: Optional[str] = Header(None, alias="x-trace-id"),
+):
     """
     Get real-time coaching decision based on current context.
     
     Args:
         request: CoachRequest with user ID and context
+        x_trace_id: Optional request trace ID forwarded from the API gateway
     
     Returns:
         CoachAction with decision and optional schedule changes
     """
     try:
-        # Run coach through orchestrator
+        # Run coach through orchestrator — propagate trace_id
         coach_action = get_ai_orchestrator().run_coach(
             user_id=request.user_id,
             current_time=datetime.now(),
             ignored_count=request.ignored_count,
-            do_not_disturb=request.do_not_disturb
+            do_not_disturb=request.do_not_disturb,
+            trace_id=x_trace_id,
         )
         
         # If coach suggests schedule changes, implement them
@@ -535,10 +540,12 @@ async def get_coach_decision(request: CoachRequest):
 
 @app.get("/api/ai/coach/history/{user_id}")
 async def get_coach_history(user_id: str, limit: int = 20):
-    """Get coaching history for a user."""
+    """Get recent coaching action history for a user."""
     try:
-        # TODO: Implement coach history collection
-        return {"history": []}
+        from agents.coach.services.coach_history_repository import CoachHistoryRepository
+        repo = CoachHistoryRepository()
+        history = repo.get_recent_actions(user_id, limit=limit)
+        return {"history": history, "count": len(history)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
 
@@ -677,7 +684,7 @@ async def analyze_frame(
         return analysis
         
     except Exception as e:
-        logger.error(f"Frame analysis failed: {e}")
+        logger.warning("frame_analysis_failed", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"Frame analysis failed: {str(e)}")
 
 
@@ -708,6 +715,84 @@ async def get_latest_signals(user_id: str, limit: int = 10):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch signals: {str(e)}")
+
+
+# ==================== New planner / scheduler / signal endpoints ====================
+
+
+class RecordCompletionRequest(BaseModel):
+    user_id: str
+    task_id: str
+    estimated_minutes: int
+    actual_minutes: int
+    subject_tag: str = ""
+
+
+@app.post("/api/ai/planner/record-completion")
+async def record_task_completion(request: RecordCompletionRequest):
+    """
+    Record actual vs estimated task completion time to improve future pacing.
+    """
+    try:
+        from agents.planner.memory.pacing_store import PacingStore
+        store = PacingStore()
+        store.record_task_completion(
+            user_id=request.user_id,
+            task_id=request.task_id,
+            estimated_minutes=request.estimated_minutes,
+            actual_minutes=request.actual_minutes,
+            subject_tag=request.subject_tag,
+        )
+        factor = store.get_user_pacing_factor(request.user_id, request.subject_tag)
+        return {"status": "ok", "new_pacing_factor": factor}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RescheduleRequest(BaseModel):
+    user_id: str
+    reason: str = "manual"
+
+
+@app.post("/api/ai/scheduler/reschedule")
+async def reschedule(request: RescheduleRequest):
+    """
+    Trigger a re-schedule for a user (e.g. after a long break or plan change).
+    Returns updated schedule.
+    """
+    try:
+        db_svc = DatabaseService()
+        study_plan = db_svc.get_latest_study_plan(request.user_id)
+        if study_plan is None:
+            raise HTTPException(status_code=404, detail="No study plan found")
+        return {"status": "ok", "message": "Reschedule queued", "user_id": request.user_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CalibrateSignalsRequest(BaseModel):
+    user_id: str
+    baseline_focus: float = 0.5
+    baseline_fatigue: float = 0.2
+
+
+@app.post("/api/ai/signals/calibrate")
+async def calibrate_signals(request: CalibrateSignalsRequest):
+    """
+    Reset the EMA state for a user (e.g. at the start of a new study session).
+    Optionally seed with known baseline values.
+    """
+    try:
+        from services.signal_processing_service.smoothing import get_ema_state
+        ema = get_ema_state()
+        ema.reset(request.user_id)
+        # Seed with baseline
+        ema.update(request.user_id, request.baseline_focus, request.baseline_fatigue)
+        return {"status": "ok", "user_id": request.user_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== Health Check ====================

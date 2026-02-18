@@ -3,9 +3,12 @@ import os
 import google.generativeai as genai
 from agents.coach.models.schemas import CoachInput, CoachAction
 from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
-def call_gemini(system_prompt: str, user_prompt: str) -> str:
+def call_gemini(system_prompt: str, user_prompt: str, trace_id: str = "") -> str:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "dummy_key_for_testing":
         # Return intelligent mock response based on input data for testing
@@ -19,7 +22,10 @@ def call_gemini(system_prompt: str, user_prompt: str) -> str:
         response = model.generate_content(full_prompt)
         return response.text
     except Exception as e:
-        print(f"Gemini API error: {e}")
+        logger.warning(
+            "gemini_api_error",
+            extra={"error": str(e), "trace_id": trace_id},
+        )
         # Fallback to mock response
         return get_mock_gemini_response(user_prompt)
 
@@ -167,18 +173,48 @@ def get_mock_gemini_response(user_prompt: str) -> str:
         })
 
 
-def decide_with_llm(input_data: CoachInput) -> CoachAction:
+def decide_with_llm(
+    input_data: CoachInput,
+    recent_history: list | None = None,
+    trace_id: str = "",
+) -> CoachAction:
     context_json = input_data.model_dump_json(indent=2)
 
-    user_prompt = build_user_prompt(context_json)
+    task_context = None
+    if any([
+        input_data.current_task_title,
+        input_data.current_task_difficulty,
+        input_data.current_task_subject,
+        input_data.current_task_key_concepts,
+    ]):
+        task_context = {
+            "title": input_data.current_task_title,
+            "difficulty": input_data.current_task_difficulty,
+            "subject": input_data.current_task_subject,
+            "key_concepts": input_data.current_task_key_concepts,
+        }
 
-    raw = call_gemini(SYSTEM_PROMPT, user_prompt)
+    user_prompt = build_user_prompt(
+        context_json,
+        recent_history=recent_history,
+        task_context=task_context,
+    )
+
+    raw = call_gemini(SYSTEM_PROMPT, user_prompt, trace_id=trace_id)
 
     try:
         parsed = json.loads(raw)
         action = CoachAction(**parsed)
+        logger.info(
+            "coach_llm_action",
+            extra={"action_type": action.action_type, "trace_id": trace_id},
+        )
         return action
     except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(
+            "coach_llm_parse_error",
+            extra={"error": str(e), "trace_id": trace_id},
+        )
         # Fallback to silence
         return CoachAction(
             action_type="silence",

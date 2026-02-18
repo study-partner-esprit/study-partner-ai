@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Set
-import logging
+from typing import Dict, List, Optional, Set
 
 from agents.scheduler.models.schedule_schema import (
     StudyPlan,
@@ -10,8 +9,9 @@ from agents.scheduler.services.calendar_normalizer import normalize_busy_slots
 from agents.scheduler.services.slot_generator import generate_free_slots
 from agents.scheduler.services.scheduling_heuristics import score_slot
 from models.task import Task
+from utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SchedulingContext:
@@ -23,12 +23,16 @@ class SchedulingContext:
         fatigue_predictions: list | None = None,
         max_minutes_per_day: int = 240,
         allow_late_night: bool = False,
+        user_id: str = "",
     ):
         self.calendar_events = calendar_events
         self.historical_productivity = historical_productivity or []
         self.fatigue_predictions = fatigue_predictions or []
         self.max_minutes_per_day = max_minutes_per_day
         self.allow_late_night = allow_late_night
+        self.user_id = user_id
+        # Loaded lazily before the scheduling loop
+        self.hourly_focus_profile: Optional[Dict[int, float]] = None
 
 
 class SchedulerAgent:
@@ -67,6 +71,28 @@ class SchedulerAgent:
         
         # Build title→id mapping for prerequisite resolution
         title_to_id = {task.title: task.task_id for task in tasks}
+
+        # --- Load hourly focus profile from signal history once --- #
+        if context.hourly_focus_profile is None and context.user_id:
+            try:
+                from services.signal_processing_service.repository import SignalRepository
+                sig_repo = SignalRepository()
+                context.hourly_focus_profile = sig_repo.get_hourly_focus_profile(
+                    context.user_id, days_back=30
+                )
+                logger.info(
+                    "scheduler_focus_profile_loaded",
+                    extra={
+                        "user_id": context.user_id,
+                        "hours": len(context.hourly_focus_profile),
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "scheduler_focus_profile_error",
+                    extra={"error": str(exc)},
+                )
+                context.hourly_focus_profile = {}
         
         # Start from tomorrow 8:00 AM
         current_date = datetime.now().replace(
@@ -179,6 +205,7 @@ class SchedulerAgent:
                 slot,
                 context.historical_productivity,
                 context.allow_late_night,
+                hourly_focus_profile=context.hourly_focus_profile,
             )
         
         # Sort by score descending
@@ -202,7 +229,8 @@ class SchedulerAgent:
             # Check if task has unmet prerequisites
             if not self._prerequisites_met(task, scheduled_task_ids, title_to_id):
                 logger.warning(
-                    f"Skipping task {task.task_id}: unmet prerequisites {task.prerequisites}"
+                    "scheduler_prereq_unmet",
+                    extra={"task_id": task.task_id}
                 )
                 skipped_tasks.add(task.task_id)
                 working_task_index += 1
@@ -311,7 +339,8 @@ class SchedulerAgent:
             # Check prerequisites
             if not self._prerequisites_met(task, scheduled_task_ids, title_to_id):
                 logger.warning(
-                    f"Skipping task {task.task_id} in fallback: unmet prerequisites"
+                    "scheduler_fallback_prereq_unmet",
+                    extra={"task_id": task.task_id},
                 )
                 skipped_tasks.add(task.task_id)
                 working_task_index += 1

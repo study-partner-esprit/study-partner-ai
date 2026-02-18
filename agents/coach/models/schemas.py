@@ -46,6 +46,12 @@ class CoachInput(BaseModel):
     is_late: bool = False
     signals: Optional[Any] = None  # SignalSnapshot from ML models
 
+    # Current task context — enriches prompt and history logging
+    current_task_title: Optional[str] = None
+    current_task_difficulty: Optional[float] = None   # 0.0 – 1.0
+    current_task_subject: Optional[str] = None
+    current_task_key_concepts: Optional[List[str]] = None
+
 
 class CoachAction(BaseModel):
     action_type: Literal[

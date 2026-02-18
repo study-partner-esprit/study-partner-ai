@@ -6,9 +6,15 @@ from agents.course_ingestion.normalization.normalizer import normalize_course
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.course_ingestion.normalization.tokenizer import tokenize_subtopics
 from agents.course_ingestion.enrichment.llm_enricher import enrich_subtopic_with_llm
+from agents.course_ingestion.enrichment.chunk_embedder import embed_all_subtopics
+from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def ingest_course(course_title: str, pdf_files: list):
+    logger.info("ingest_course_start", extra={"course_title": course_title, "num_files": len(pdf_files)})
     all_sections = []
 
     for pdf_path in pdf_files:
@@ -21,6 +27,7 @@ def ingest_course(course_title: str, pdf_files: list):
             text = extract_text_from_pdf(pdf_path)
             # fallback to OCR if needed (text too small)
             if len(text.strip()) < 50:
+                logger.info("ingest_ocr_fallback", extra={"file": pdf_path})
                 text = ocr_pdf(pdf_path)
 
         # Step 2: detect sections
@@ -45,6 +52,16 @@ def ingest_course(course_title: str, pdf_files: list):
     # Step 5: tokenize subtopics content
     subtopics = tokenize_subtopics(enriched_subtopics, chunk_size=200, overlap=50)
 
+    # Step 5b: embed all chunks at ingest time and deduplicate per subtopic
+    subtopics = embed_all_subtopics(subtopics)
+    for st in subtopics:
+        chunks = st.get("tokenized_chunks", [])
+        embeddings = st.get("chunk_embeddings", [])
+        if chunks and embeddings:
+            unique_chunks, unique_embeddings = deduplicate_chunks(chunks, embeddings)
+            st["tokenized_chunks"] = unique_chunks
+            st["chunk_embeddings"] = unique_embeddings
+
     # Step 6: normalize JSON
     course_json = normalize_course(course_title, subtopics, pdf_files)
 
@@ -52,4 +69,5 @@ def ingest_course(course_title: str, pdf_files: list):
     db = DatabaseService()
     course_id = db.save_course(course_json.dict())
 
+    logger.info("ingest_course_done", extra={"course_id": str(course_id)})
     return course_id

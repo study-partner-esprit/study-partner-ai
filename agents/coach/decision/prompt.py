@@ -43,11 +43,56 @@ and be supportive of the user's well-being.
 """
 
 
-def build_user_prompt(context_json: str) -> str:
+def build_user_prompt(
+    context_json: str,
+    recent_history: list | None = None,
+    task_context: dict | None = None,
+) -> str:
+    """
+    Construct the full user prompt to send to the LLM.
+
+    Args:
+        context_json:    JSON-serialised CoachInput (student state).
+        recent_history:  Optional list of recent coach actions (newest first).
+                         Each item should have at least: ts, action_type, message.
+        task_context:    Optional dict with current task details:
+                         title, difficulty, subject, key_concepts.
+
+    Returns:
+        Formatted prompt string.
+    """
+    history_section = ""
+    if recent_history:
+        lines = []
+        for h in recent_history[:5]:
+            ts = h.get("ts", "")
+            atype = h.get("action_type", "")
+            msg = h.get("message") or "(no message)"
+            lines.append(f"  - [{ts}] {atype}: {msg}")
+        history_section = (
+            "\n\nRecent coaching history (newest first — use to avoid repetitive interventions):\n"
+            + "\n".join(lines)
+        )
+
+    task_section = ""
+    if task_context and any(task_context.values()):
+        title = task_context.get("title") or "unknown"
+        difficulty = task_context.get("difficulty")
+        subject = task_context.get("subject") or "unknown"
+        concepts = ", ".join(task_context.get("key_concepts") or []) or "N/A"
+        diff_str = f"{difficulty:.2f}" if difficulty is not None else "N/A"
+        task_section = (
+            f"\n\nCurrent task context:\n"
+            f"  Title: {title}\n"
+            f"  Subject: {subject}\n"
+            f"  Difficulty: {diff_str}\n"
+            f"  Key concepts: {concepts}"
+        )
+
     return f"""
 Analyze this student's current state and decide on the best coaching intervention:
 
-{context_json}
+{context_json}{task_section}{history_section}
 
 Consider all factors together:
 - How severe are the issues?
@@ -55,6 +100,7 @@ Consider all factors together:
 - What's the best balance of productivity vs well-being?
 - Should schedule changes be made?
 - Are we respecting focus state from ML signals?
+- Have we intervened recently (avoid repetition)?
 
 Return ONLY a JSON object with schedule_changes included when appropriate:
 

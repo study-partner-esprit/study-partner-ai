@@ -11,11 +11,15 @@ from agents.planner.rules.buffer_inserter import insert_buffers
 from agents.planner.rules.feasibility import is_plan_feasible
 from agents.planner.rules.clarification import ClarificationChecker
 from agents.planner.memory.pacing_store import PacingStore
+from agents.planner.rag.index_store import save_index, load_index
 
 # RAG + embeddings imports
 from agents.planner.rag.embeddings import EmbeddingModel
 from agents.planner.rag.indexer import VectorStore
 from agents.planner.rag.retriever import ContentRetriever
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class PlannerAgent:
@@ -82,15 +86,22 @@ class PlannerAgent:
                 self._extract_texts_from_course_knowledge(request.course_knowledge)
             )
 
-        # Index all course texts
+        # Index all course texts — prefer pre-computed embeddings when available
         if course_texts:
             try:
-                chunks_added = self.retriever.add_documents(
-                    course_texts, request.tokenization_settings
+                chunks_added = self._load_retrieval_context(
+                    request.course_knowledge,
+                    course_texts,
+                    request.tokenization_settings,
                 )
-                print(f"✅ Added {chunks_added} document chunks to knowledge base")
+                logger.info(
+                    "planner_chunks_indexed",
+                    extra={"num_chunks": chunks_added},
+                )
             except Exception as e:
-                print(f"⚠️ Warning: Could not index documents - {str(e)}")
+                logger.warning(
+                    "planner_index_failed", extra={"error": str(e)}
+                )
 
         # Step 3: Retrieve relevant concepts using RAG
         if course_texts:
@@ -117,9 +128,28 @@ class PlannerAgent:
         # Step 8: Final feasibility check
         warning = None
         if not is_plan_feasible(tasks, request.available_minutes):
-            warning = f"Plan requires {task_graph.total_estimated_minutes} minutes, but only {request.available_minutes} available."
+            warning = (
+                f"Plan requires {task_graph.total_estimated_minutes} minutes, "
+                f"but only {request.available_minutes} available."
+            )
 
-        # Step 9: Update pacing store
+        # Step 9: Persist FAISS index to disk if we built one
+        course_id = (
+            request.course_knowledge.get("_id") or
+            request.course_knowledge.get("course_title", "default")
+            if request.course_knowledge else None
+        )
+        if course_id and self.retriever.indexed_chunks:
+            try:
+                save_index(
+                    self.vector_store.index,
+                    self.retriever.indexed_chunks,
+                    str(course_id),
+                )
+            except Exception as exc:
+                logger.warning("planner_save_index_failed", extra={"error": str(exc)})
+
+        # Step 10: Update pacing store
         self.pacing_store.update_from_execution(
             request.user_id,
             task_graph.total_estimated_minutes,
@@ -129,6 +159,66 @@ class PlannerAgent:
         return PlannerOutput(
             task_graph=task_graph, warning=warning, clarification_required=False
         )
+
+    def _load_retrieval_context(
+        self,
+        course_knowledge: dict | None,
+        course_texts: list[str],
+        tokenization_settings: dict | None,
+    ) -> int:
+        """
+        Populate the in-memory FAISS retriever, preferring pre-computed embeddings.
+
+        Priority:
+          1. Pre-computed chunk_embeddings from course_knowledge subtopics.
+          2. Disk-cached FAISS index (saves re-encoding on repeated calls).
+          3. Re-encode from raw course_texts (slowest path).
+
+        Returns:
+            Number of chunks indexed.
+        """
+        # --- path 1: pre-computed embeddings from MongoDB / ingestion --- #
+        if course_knowledge and "topics" in course_knowledge:
+            all_chunks: list[str] = []
+            all_embeddings: list[list[float]] = []
+            for topic in course_knowledge["topics"]:
+                for subtopic in topic.get("subtopics", []):
+                    chunks = subtopic.get("tokenized_chunks", [])
+                    embeds = subtopic.get("chunk_embeddings")
+                    if chunks and embeds and len(chunks) == len(embeds):
+                        all_chunks.extend(chunks)
+                        all_embeddings.extend(embeds)
+            if all_chunks:
+                logger.info(
+                    "planner_using_precomputed_embeddings",
+                    extra={"num_chunks": len(all_chunks)},
+                )
+                return self.retriever.add_precomputed_embeddings(
+                    all_chunks, all_embeddings
+                )
+
+        # --- path 2: disk-cached FAISS index --- #
+        course_id = None
+        if course_knowledge:
+            course_id = (
+                str(course_knowledge.get("_id") or
+                course_knowledge.get("course_title", ""))
+            )
+        if course_id:
+            disk_index, disk_chunks = load_index(course_id)
+            if disk_index is not None:
+                logger.info(
+                    "planner_loaded_disk_index",
+                    extra={"course_id": course_id, "ntotal": disk_index.ntotal},
+                )
+                self.vector_store.index = disk_index
+                self.retriever.indexed_chunks = disk_chunks
+                return len(disk_chunks)
+
+        # --- path 3: fallback — re-encode from text --- #
+        logger.info("planner_reencoding_course_texts",
+                    extra={"num_texts": len(course_texts)})
+        return self.retriever.add_documents(course_texts, tokenization_settings)
 
     def _decompose_goal(
         self, goal: str, concepts: list, available_minutes: int, course_knowledge: dict = None
@@ -140,18 +230,18 @@ class PlannerAgent:
         """
         # If course knowledge is provided and goal is derived from course, generate tasks from course
         if course_knowledge and goal and self._is_goal_from_course(goal, course_knowledge):
-            print(f"DEBUG: Using course-based generation for goal: {goal}")
+            logger.debug("planner_course_based_decompose", extra={"goal": goal})
             return self._generate_tasks_from_course(course_knowledge, available_minutes)
 
         # Try LLM decomposer first for specific goals
-        print(f"DEBUG: Trying LLM decomposer for goal: {goal}")
+        logger.debug("planner_llm_decompose", extra={"goal": goal})
         llm_tasks = self.llm_decomposer.decompose(goal, concepts, available_minutes)
         if llm_tasks and len(llm_tasks) > 1:
-            print(f"DEBUG: LLM decomposer returned {len(llm_tasks)} tasks")
+            logger.debug("planner_llm_decompose_ok", extra={"num_tasks": len(llm_tasks)})
             return llm_tasks
 
         # Fallback to simple decomposer
-        print("Using simple decomposer fallback")
+        logger.info("planner_simple_decompose_fallback")
         return self.simple_decomposer.decompose(goal, concepts, available_minutes)
 
     def _apply_rules(
@@ -253,8 +343,11 @@ class PlannerAgent:
             True if goal appears to be derived from course
         """
         course_title = course_knowledge.get("title") or course_knowledge.get("course_title", "")
-        result = course_title and course_title in goal
-        print(f"DEBUG: _is_goal_from_course - goal: '{goal}', course_title: '{course_title}', result: {result}")
+        result = bool(course_title and course_title in goal)
+        logger.debug(
+            "planner_is_goal_from_course",
+            extra={"goal": goal, "course_title": course_title, "result": result},
+        )
         return result
 
     def _generate_tasks_from_course(self, course_knowledge: dict, available_minutes: int) -> list:
@@ -319,13 +412,9 @@ class PlannerAgent:
                         if "tokenized_chunks" in subtopic and subtopic["tokenized_chunks"]:
                             # Use the first clean chunk
                             description_parts.append(subtopic["tokenized_chunks"][0][:300])
-                            print(f"DEBUG: Using tokenized_chunks for {subtopic_title}: {subtopic['tokenized_chunks'][0][:100]}...")
                         elif "summary" in subtopic:
                             # Fallback to summary if no tokenized chunks
                             description_parts.append(subtopic["summary"][:300])
-                            print(f"DEBUG: Using summary for {subtopic_title}: {subtopic['summary'][:100]}...")
-                        else:
-                            print(f"DEBUG: No content found for {subtopic_title}")
 
                         description = " ".join(description_parts) if description_parts else f"Study {subtopic_title}"
 
