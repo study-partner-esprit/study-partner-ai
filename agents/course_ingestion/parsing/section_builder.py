@@ -1,4 +1,5 @@
 import re
+from agents.course_ingestion.enrichment.llm_enricher import generate_subtopic_title
 
 
 def build_subtopics(sections):
@@ -18,13 +19,24 @@ def build_subtopics(sections):
 
         # Generate meaningful title
         if sec["title"] and not sec["title"].startswith("•"):
-            title = sec["title"]
+            title = sec["title"].strip()
         elif content_text:
-            # Use first meaningful line as title
+            # Use first meaningful line as temporary title
             first_line = sec["content"][0] if sec["content"] else f"Subtopic {idx}"
-            title = first_line[:100] if len(first_line) > 0 else f"Subtopic {idx}"
+            title = first_line[:120].strip() if len(first_line) > 0 else f"Subtopic {idx}"
         else:
             title = f"Subtopic {idx}"
+
+        # If the title is generic or too short, try generating a concise title using LLM
+        title_words = len([w for w in title.split() if w.isalpha()])
+        if title.lower().startswith("subtopic") or title_words < 2:
+            try:
+                generated = generate_subtopic_title(content_text)
+                if generated:
+                    title = generated
+            except Exception:
+                # fall back to existing title
+                pass
 
         # Create summary from first 2-3 sentences (not just chars)
         sentences = re.split(r"[.!?]\s+", content_text)

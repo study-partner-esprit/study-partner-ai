@@ -261,3 +261,48 @@ Return JSON now:
         }
 
     return data
+
+
+def generate_subtopic_title(text: str, max_words: int = 8) -> str:
+    """
+    Generate a concise, descriptive title for a subtopic using the LLM.
+    Falls back to a heuristic if the LLM call fails or returns empty.
+    """
+    if not text or not text.strip():
+        return "Untitled Subtopic"
+
+    prompt = f"""
+You are an assistant that writes short, descriptive titles for educational subtopics.
+Given the following content, produce a concise title (no more than {max_words} words),
+focused on the main concept, suitable as a subtopic heading. Return the title only.
+
+CONTENT:
+{text[:2000]}
+"""
+
+    try:
+        title = call_llm(prompt, system_prompt=MODEL_NAME)
+        if not title:
+            raise ValueError("empty title")
+
+        # Keep first line and strip markdown/quotes
+        title = title.splitlines()[0].strip().strip('"')
+        # Shorten to max_words
+        parts = title.split()
+        if len(parts) > max_words:
+            title = " ".join(parts[:max_words])
+
+        # Basic cleanup
+        title = re.sub(r"[^\w\s\-:,()]+", "", title).strip()
+        if not title:
+            raise ValueError("cleaned empty")
+
+        return title
+
+    except Exception:
+        # Heuristic fallback: use first sentence and trim
+        first_sentence = re.split(r"[.!?]\s+", text.strip())[0]
+        fallback = first_sentence[:100].strip()
+        if len(fallback.split()) > max_words:
+            fallback = " ".join(fallback.split()[:max_words])
+        return fallback or "Untitled Subtopic"

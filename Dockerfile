@@ -35,7 +35,19 @@ RUN pip install --no-cache-dir \
     reportlab \
     opencv-python \
     mediapipe \
-    python-multipart
+    python-multipart \
+    # Search agent deps \
+    flask \
+    beautifulsoup4 \
+    apify-client \
+    SpeechRecognition \
+    pyttsx3 \
+    # Testing toolchain \
+    pytest \
+    pytest-asyncio \
+    pytest-json-report \
+    httpx \
+    anyio
 
 # Install poetry for dependency management
 RUN pip install --no-cache-dir poetry poetry-plugin-export
@@ -61,4 +73,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')" || exit 1
 
 # Run the application with uvicorn
-CMD ["uvicorn", "services.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "services.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

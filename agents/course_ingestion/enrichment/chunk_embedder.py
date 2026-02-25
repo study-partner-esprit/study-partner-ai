@@ -25,9 +25,11 @@ def embed_chunks(chunks: List[str]) -> List[List[float]]:
     Returns:
         List of float lists (serialisable for MongoDB).
     """
-    if not chunks:
+    if not chunks:          # safe: chunks is a plain Python list
         return []
-    vecs = get_embedder().encode(chunks)
+    vecs = get_embedder().encode(chunks)   # returns np.ndarray shape (N, 384)
+    if vecs.size == 0:      # safe numpy check — never uses bool(ndarray)
+        return []
     return vecs.tolist()
 
 

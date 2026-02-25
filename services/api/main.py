@@ -5,12 +5,15 @@ This service provides RESTful endpoints for the frontend to interact with all AI
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import tempfile
 import os
 import sys
+import json
+import subprocess
 from pathlib import Path
 # Ensure project root is on sys.path before importing local packages
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +27,6 @@ from agents.planner.agent import PlannerAgent
 from agents.planner.models.task_graph import PlannerInput
 from services.ai_orchestrator.orchestrator import AIOrchestrator
 from services.schedule_orchestrator.orchestrator import ScheduleOrchestrator
-# from services.signal_processing_service.service import SignalProcessingService  # Disabled to prevent crashes
 from services.signal_processing_service.focus_detector import get_focus_detector
 from services.signal_processing_service.fatigue_detector import get_fatigue_detector
 from pymongo import MongoClient
@@ -32,7 +34,16 @@ from bson import ObjectId
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
- 
+
+# --- Environment validation (fail-fast on missing secrets) ---
+_REQUIRED_ENV = ["GEMINI_API_KEY"]
+for _key in _REQUIRED_ENV:
+    if not os.getenv(_key):
+        logger.warning(
+            "missing_env_var",
+            extra={"var": _key, "hint": "AI features that require this key will fail at runtime"},
+        )
+
 
 def convert_objectid_to_str(obj):
     """Recursively convert ObjectId to string in nested dictionaries and lists."""
@@ -86,9 +97,20 @@ def get_schedule_orchestrator():
     return _schedule_orchestrator
 
 
+_signal_service = None
+
 def get_signal_service():
-    """Signal service disabled to prevent crashes."""
-    return None
+    """Lazy-load the SignalProcessingService to avoid startup crashes."""
+    global _signal_service
+    if _signal_service is None:
+        try:
+            from services.signal_processing_service.service import SignalProcessingService
+            _signal_service = SignalProcessingService()
+            logger.info("SignalProcessingService initialised (ready=%s)", _signal_service.is_ready())
+        except Exception as e:
+            logger.warning("SignalProcessingService unavailable: %s", e)
+            _signal_service = False  # sentinel: attempted and failed
+    return _signal_service if _signal_service is not False else None
 
 
 # ==================== Pydantic Models ====================
@@ -749,6 +771,106 @@ async def record_task_completion(request: RecordCompletionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Review / Spaced Repetition Endpoints ──────────────────────────────
+
+class ScheduleReviewRequest(BaseModel):
+    user_id: str
+    task_id: str
+    task_title: str
+    subject_tag: str = ""
+    key_concepts: List[str] = []
+    difficulty: str = "medium"
+
+
+@app.post("/api/ai/reviews/schedule")
+async def schedule_review(request: ScheduleReviewRequest):
+    """
+    Schedule the first spaced repetition review for a completed task.
+    """
+    try:
+        from agents.planner.memory.review_inserter import ReviewInserter
+        inserter = ReviewInserter()
+        result = inserter.schedule_review(
+            user_id=request.user_id,
+            task_id=request.task_id,
+            task_title=request.task_title,
+            subject_tag=request.subject_tag,
+            key_concepts=request.key_concepts,
+            difficulty=request.difficulty,
+        )
+        if result is None:
+            raise HTTPException(status_code=500, detail="Failed to schedule review")
+        return {"status": "ok", "review": convert_objectid_to_str(result)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RecordReviewResultRequest(BaseModel):
+    user_id: str
+    review_id: str
+    quality_score: int  # 0-5
+
+
+@app.post("/api/ai/reviews/record-result")
+async def record_review_result(request: RecordReviewResultRequest):
+    """
+    Record the result of a review session and schedule the next review.
+
+    Quality scores:
+      0 = complete blackout
+      1 = incorrect, recognized correct answer
+      2 = incorrect, answer seemed easy to recall
+      3 = correct with significant difficulty
+      4 = correct after hesitation
+      5 = perfect, instant recall
+    """
+    try:
+        from agents.planner.memory.review_inserter import ReviewInserter
+        inserter = ReviewInserter()
+        result = inserter.record_review_result(
+            user_id=request.user_id,
+            review_id=request.review_id,
+            quality_score=request.quality_score,
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Review not found")
+        return {"status": "ok", **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/reviews/pending/{user_id}")
+async def get_pending_reviews(user_id: str, limit: int = 20):
+    """
+    Get all pending and overdue reviews for a user.
+    """
+    try:
+        from agents.planner.memory.review_inserter import ReviewInserter
+        inserter = ReviewInserter()
+        reviews = inserter.get_pending_reviews(user_id, limit=limit)
+        return {"status": "ok", "reviews": reviews, "count": len(reviews)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/reviews/stats/{user_id}")
+async def get_review_stats(user_id: str):
+    """
+    Get review statistics for a user.
+    """
+    try:
+        from agents.planner.memory.review_inserter import ReviewInserter
+        inserter = ReviewInserter()
+        stats = inserter.get_review_stats(user_id)
+        return {"status": "ok", **stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class RescheduleRequest(BaseModel):
     user_id: str
     reason: str = "manual"
@@ -793,6 +915,263 @@ async def calibrate_signals(request: CalibrateSignalsRequest):
         return {"status": "ok", "user_id": request.user_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Search Agent ====================
+
+class SearchAskRequest(BaseModel):
+    question: str
+    user_id: Optional[str] = ""
+    session_id: Optional[str] = ""
+
+
+@app.post("/api/ai/search/ask")
+async def search_ask(req: SearchAskRequest, x_trace_id: Optional[str] = Header(None, alias="x-trace-id")):
+    """Web-search a question using Apify + extract text + answer via LM Studio (Qwen)."""
+    import uuid
+    trace_id = x_trace_id or str(uuid.uuid4())
+    try:
+        from agents.search.agent import process_question
+        result = process_question(
+            req.question,
+            user_id=req.user_id,
+            session_id=req.session_id,
+            trace_id=trace_id,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=503, detail=result.get("error", "Search failed"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("search_ask_error", extra={"error": str(exc), "trace_id": trace_id})
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/ai/search/history/{user_id}")
+async def search_history(user_id: str, limit: int = 20):
+    """Return the last N search exchanges for a user."""
+    try:
+        from agents.search.services.search_repository import SearchRepository
+        repo = SearchRepository()
+        items = repo.get_history(user_id, limit=limit)
+        return {"user_id": user_id, "history": items}
+    except Exception as exc:
+        logger.warning("search_history_error", extra={"error": str(exc)})
+        return {"user_id": user_id, "history": []}
+
+
+@app.delete("/api/ai/search/history/{user_id}")
+async def search_history_clear(user_id: str):
+    """Clear all search history for a user."""
+    try:
+        from agents.search.services.search_repository import SearchRepository
+        repo = SearchRepository()
+        repo.clear_history(user_id)
+        return {"success": True}
+    except Exception as exc:
+        logger.warning("search_history_clear_error", extra={"error": str(exc)})
+        return {"success": False, "error": str(exc)}
+
+
+# ==================== Test Runner ====================
+
+_TEST_SUITES: Dict[str, List[str]] = {
+    "coach":     ["agents/coach/tests/"],
+    "planner":   ["agents/planner/tests/"],
+    "scheduler": ["agents/scheduler/tests/"],
+    "ingestion": ["agents/course_ingestion/tests/test_embedder.py"],
+    "signals":   ["services/signal_processing_service/tests/"],
+    "search":    ["agents/search/tests/"],
+    "all": [
+        "agents/coach/tests/",
+        "agents/planner/tests/",
+        "agents/scheduler/tests/",
+        "agents/course_ingestion/tests/test_embedder.py",
+        "services/signal_processing_service/tests/",
+        "agents/search/tests/",
+    ],
+}
+
+
+@app.get("/tests", response_class=HTMLResponse)
+async def tests_ui():
+    """Serve the test runner web UI."""
+    html = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Partner — Test Runner</title>
+  <style>
+    :root { --bg: #0f172a; --surface: #1e293b; --accent: #6366f1; --pass: #22c55e; --fail: #ef4444; --skip: #f59e0b; --text: #e2e8f0; --muted: #94a3b8; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { padding: 1.5rem 2rem; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header span { background: var(--accent); color: #fff; font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; }
+    main { max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; }
+    .controls { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; align-items: center; }
+    select { background: var(--surface); border: 1px solid #334155; color: var(--text); padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; }
+    button#run { background: var(--accent); color: #fff; border: none; padding: 0.55rem 1.6rem; border-radius: 0.5rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity .2s; }
+    button#run:disabled { opacity: 0.5; cursor: not-allowed; }
+    #summary { display: flex; gap: 1.2rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .pill { padding: 0.35rem 1rem; border-radius: 999px; font-size: 0.82rem; font-weight: 600; }
+    .pill.pass { background: #14532d; color: var(--pass); }
+    .pill.fail { background: #450a0a; color: var(--fail); }
+    .pill.skip { background: #451a03; color: var(--skip); }
+    .pill.dur  { background: #1e293b; color: var(--muted); }
+    #output { background: var(--surface); border-radius: 0.75rem; padding: 1.25rem 1.5rem; font-family: 'Fira Mono', monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre; border: 1px solid #334155; max-height: 560px; overflow-y: auto; }
+    .line-pass { color: var(--pass); }
+    .line-fail { color: var(--fail); }
+    .line-skip { color: var(--skip); }
+    .line-warn { color: var(--skip); }
+    .line-err  { color: var(--fail); font-weight: 700; }
+    #spinner { display: none; width: 1.25rem; height: 1.25rem; border: 2px solid #334155; border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #status { font-size: 0.82rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Study Partner</h1><span>Test Runner</span>
+  </header>
+  <main>
+    <div class="controls">
+      <select id="suite">
+        <option value="all">All suites</option>
+        <option value="coach">Coach Agent</option>
+        <option value="planner">Planner Agent</option>
+        <option value="scheduler">Scheduler Agent</option>
+        <option value="ingestion">Course Ingestion</option>
+        <option value="signals">Signal Processing</option>
+        <option value="search">Search Agent</option>
+      </select>
+      <button id="run" onclick="runTests()">▶ Run Tests</button>
+      <div id="spinner"></div>
+      <span id="status"></span>
+    </div>
+    <div id="summary"></div>
+    <div id="output">Select a suite and press Run Tests.</div>
+  </main>
+  <script>
+    async function runTests() {
+      const suite = document.getElementById('suite').value;
+      const btn   = document.getElementById('run');
+      const spin  = document.getElementById('spinner');
+      const stat  = document.getElementById('status');
+      const out   = document.getElementById('output');
+      const sumEl = document.getElementById('summary');
+      btn.disabled = true;
+      spin.style.display = 'block';
+      stat.textContent = 'Running…';
+      out.textContent = '';
+      sumEl.innerHTML = '';
+      try {
+        const res  = await fetch('/api/tests/run', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({suite}) });
+        const data = await res.json();
+        const lines = (data.output || '').split('\\n');
+        out.innerHTML = lines.map(colorize).join('\\n');
+        out.scrollTop = out.scrollHeight;
+        if (data.summary) {
+          const s = data.summary;
+          sumEl.innerHTML =
+            `<span class="pill pass">✔ ${s.passed ?? 0} passed</span>` +
+            (s.failed  ? `<span class="pill fail">✘ ${s.failed} failed</span>` : '') +
+            (s.skipped ? `<span class="pill skip">⏭ ${s.skipped} skipped</span>` : '') +
+            `<span class="pill dur">⏱ ${(s.duration||0).toFixed(2)}s</span>`;
+        }
+        stat.textContent = data.exit_code === 0 ? '✔ All passed' : '✘ Some tests failed';
+      } catch(e) {
+        out.textContent = 'Error: ' + e.message;
+        stat.textContent = 'Error';
+      } finally {
+        btn.disabled = false;
+        spin.style.display = 'none';
+      }
+    }
+    function colorize(line) {
+      const e = l => l.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      if (/PASSED/.test(line))  return `<span class="line-pass">${e(line)}</span>`;
+      if (/FAILED/.test(line))  return `<span class="line-fail">${e(line)}</span>`;
+      if (/SKIPPED/.test(line)) return `<span class="line-skip">${e(line)}</span>`;
+      if (/ERROR/.test(line))   return `<span class="line-err">${e(line)}</span>`;
+      if (/warning/.test(line.toLowerCase())) return `<span class="line-warn">${e(line)}</span>`;
+      return e(line);
+    }
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+class TestRunRequest(BaseModel):
+    suite: str = "all"
+
+
+@app.post("/api/tests/run")
+async def run_tests(req: TestRunRequest):
+    """Run the pytest suite identified by `suite` and return structured results."""
+    suite = req.suite if req.suite in _TEST_SUITES else "all"
+    paths = _TEST_SUITES[suite]
+    root = str(Path(__file__).resolve().parents[2])
+
+    cmd = [
+        sys.executable, "-m", "pytest",
+        *paths,
+        "-v",
+        "--tb=short",
+        "-W", "ignore::DeprecationWarning",
+        "-W", "ignore::pytest.PytestUnknownMarkWarning",
+        "--json-report",
+        "--json-report-file=-",
+        "-p", "no:cacheprovider",
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=root,
+            timeout=180,
+        )
+        stdout = proc.stdout
+        stderr = proc.stderr
+        output = stdout + ("\n" + stderr if stderr.strip() else "")
+
+        # Try to parse the JSON report embedded in stdout
+        summary: Dict[str, Any] = {}
+        try:
+            # pytest-json-report writes JSON to stdout after the normal output
+            json_start = stdout.rfind('{"created"')
+            if json_start == -1:
+                json_start = stdout.rfind('{"duration"')
+            if json_start != -1:
+                report = json.loads(stdout[json_start:])
+                s = report.get("summary", {})
+                summary = {
+                    "passed":   s.get("passed", 0),
+                    "failed":   s.get("failed", 0),
+                    "skipped":  s.get("skipped", 0),
+                    "error":    s.get("error", 0),
+                    "duration": report.get("duration", 0),
+                }
+                # Strip the JSON blob from the displayed output
+                output = stdout[:json_start].strip() + ("\n" + stderr if stderr.strip() else "")
+        except Exception:
+            pass
+
+        return {
+            "suite":     suite,
+            "exit_code": proc.returncode,
+            "output":    output,
+            "summary":   summary,
+        }
+    except subprocess.TimeoutExpired:
+        return {"suite": suite, "exit_code": -1, "output": "Test run timed out (>180 s)", "summary": {}}
+    except Exception as exc:
+        return {"suite": suite, "exit_code": -1, "output": str(exc), "summary": {}}
 
 
 # ==================== Health Check ====================

@@ -20,7 +20,8 @@ import uuid
 
 
 def run_study_planner(
-    pdf_paths: list[str], learning_goal: str = None, available_time: int = None
+    pdf_paths: list[str], learning_goal: str = None, available_time: int = None,
+    user_id: str = None,
 ) -> dict:
     """
     Orchestrate the complete study planning pipeline.
@@ -29,10 +30,13 @@ def run_study_planner(
         pdf_paths: List of paths to PDF course materials
         learning_goal: Optional learning goal (if not provided, will be derived from course)
         available_time: Available study time in minutes (default: 480 = 8 hours)
+        user_id: Authenticated user ID (required for history/pacing persistence)
 
     Returns:
         Dictionary containing the planner output with task graph
     """
+    if user_id is None:
+        raise ValueError("user_id is required – pass the authenticated user's ID")
     if available_time is None:
         available_time = 480  # Default 8 hours
     # Step 1: Ingest the course materials
@@ -63,7 +67,7 @@ def run_study_planner(
         goal=learning_goal,  # Can be None - planner will derive from course
         deadline_iso=deadline.isoformat(),
         available_minutes=available_time,
-        user_id=str(uuid.uuid4()),  # Generate a unique user ID for this session
+        user_id=user_id,
         course_knowledge=course_data,  # Pass the full course JSON as context
     )
 
@@ -78,6 +82,7 @@ def run_study_planner(
     print("💾 Saving study plan to database...")
     study_plan_data = planner_output.model_dump()
     study_plan_data["course_id"] = course_id  # Link to the course
+    study_plan_data["user_id"] = user_id
     study_plan_data["created_at"] = datetime.now().isoformat()
 
     study_plan_id = db.save_study_plan(study_plan_data)
@@ -90,7 +95,8 @@ def run_study_planner(
     return result
 
 def run_full_study_workflow(
-    pdf_paths: list[str], learning_goal: str = None, available_time: int = None
+    pdf_paths: list[str], learning_goal: str = None, available_time: int = None,
+    user_id: str = None,
 ) -> dict:
     """
     Orchestrate the complete study workflow from PDF to scheduled tasks.
@@ -99,15 +105,18 @@ def run_full_study_workflow(
         pdf_paths: List of paths to PDF course materials
         learning_goal: Optional learning goal (if not provided, will be derived from course)
         available_time: Available study time in minutes (default: 480 = 8 hours)
+        user_id: Authenticated user ID (required for history/pacing persistence)
 
     Returns:
         Dictionary containing planner output, scheduler output, and metadata
     """
+    if user_id is None:
+        raise ValueError("user_id is required – pass the authenticated user's ID")
     if available_time is None:
         available_time = 480  # Default 8 hours
 
     # Step 1-4: Run the planner pipeline (reuse existing logic)
-    planner_result = run_study_planner(pdf_paths, learning_goal, available_time)
+    planner_result = run_study_planner(pdf_paths, learning_goal, available_time, user_id=user_id)
 
     # Step 5: Extract tasks from planner output and convert to Task objects
     print("🔄 Converting planner tasks to scheduler format...")
@@ -128,7 +137,7 @@ def run_full_study_workflow(
 
         task = Task(
             task_id=atomic_task["id"],
-            user_id="full_workflow_user",  # Fixed user ID for this workflow
+            user_id=user_id,
             title=atomic_task["title"],
             description=atomic_task["description"],
             estimated_duration=atomic_task["estimated_minutes"],
@@ -183,27 +192,10 @@ def run_full_study_workflow(
 
     return result
 
-    # Step 8: Return comprehensive result
-    result = {
-        "planner_output": planner_output,
-        "scheduler_output": study_plan.model_dump(),
-        "metadata": {
-            "course_id": planner_result.get("course_id"),
-            "study_plan_id": planner_result.get("study_plan_id"),
-            "total_tasks": len(tasks),
-            "scheduled_sessions": len(study_plan.sessions),
-            "total_scheduled_minutes": study_plan.total_minutes,
-            "plan_span_days": study_plan.span_days,
-            "fallback_used": study_plan.fallback_used,
-            "skipped_tasks": study_plan.skipped_tasks,
-        }
-    }
-
-    return result
-
 # Convenience function for testing
 def run_study_planner_with_course_id(
-    course_id: str, learning_goal: str, available_time: int
+    course_id: str, learning_goal: str, available_time: int,
+    user_id: str = None,
 ) -> dict:
     """
     Alternative entry point that uses an existing course ID instead of ingesting PDFs.
@@ -212,14 +204,17 @@ def run_study_planner_with_course_id(
         course_id: Existing course ID from MongoDB
         learning_goal: The learning goal to decompose into tasks
         available_time: Available study time in minutes
+        user_id: Authenticated user ID (required for history/pacing persistence)
 
     Returns:
         Dictionary containing the planner output with task graph
     """
+    if user_id is None:
+        raise ValueError("user_id is required – pass the authenticated user's ID")""
     # Step 1: Retrieve the normalized course JSON from MongoDB
     print("🔍 Retrieving course data from database...")
     db = DatabaseService()
-    course_data = db.get_course(course_id)
+    course_data = db.get_course_by_id(course_id)
 
     if not course_data:
         raise ValueError(f"Could not retrieve course data for ID: {course_id}")
@@ -236,7 +231,7 @@ def run_study_planner_with_course_id(
         goal=learning_goal,
         deadline_iso=deadline.isoformat(),
         available_minutes=available_time,
-        user_id=str(uuid.uuid4()),
+        user_id=user_id,
         course_knowledge=course_data,
     )
 
@@ -251,6 +246,7 @@ def run_study_planner_with_course_id(
     print("💾 Saving study plan to database...")
     study_plan_data = planner_output.model_dump()
     study_plan_data["course_id"] = course_id  # Link to the course
+    study_plan_data["user_id"] = user_id
     study_plan_data["created_at"] = datetime.now().isoformat()
 
     db = DatabaseService()

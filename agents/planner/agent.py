@@ -1,8 +1,13 @@
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 from agents.planner.models.task_graph import (
     PlannerInput,
     PlannerOutput,
     TaskGraph,
 )
+from models.task import Task
 from agents.planner.decomposition.simple_decomposer import SimpleGoalDecomposer
 from agents.planner.decomposition.llm_decomposer_real import LLMDecomposerReal
 from agents.planner.rules.constraints import enforce_max_duration
@@ -159,6 +164,69 @@ class PlannerAgent:
         return PlannerOutput(
             task_graph=task_graph, warning=warning, clarification_required=False
         )
+
+    # ------------------------------------------------------------------
+    # Convenience wrapper — maps kwargs to PlannerInput + converts output
+    # ------------------------------------------------------------------
+
+    def generate_tasks(
+        self,
+        user_goal: str,
+        available_time_minutes: int,
+        course_context: Optional[Dict[str, Any]] = None,
+        user_id: str = "",
+        deadline_days: int = 7,
+    ) -> List[Task]:
+        """
+        Convenience method: build a list of scheduler-ready ``Task`` objects
+        from a natural-language goal (and optional course context).
+
+        Args:
+            user_goal:              The learner's main goal.
+            available_time_minutes: Total study budget in minutes.
+            course_context:         Optional structured course knowledge dict.
+            user_id:                User identifier (defaults to a random UUID).
+            deadline_days:          Days from now until the study deadline.
+
+        Returns:
+            List[Task] ready to pass to ``SchedulerAgent.build_schedule()``.
+        """
+        if not user_id:
+            user_id = str(uuid.uuid4())
+
+        deadline = (datetime.now() + timedelta(days=deadline_days)).isoformat()
+
+        request = PlannerInput(
+            goal=user_goal,
+            deadline_iso=deadline,
+            available_minutes=available_time_minutes,
+            user_id=user_id,
+            course_knowledge=course_context,
+        )
+
+        output: PlannerOutput = self.plan(request)
+        atomic_tasks = output.task_graph.tasks
+
+        def _difficulty_label(score: float) -> str:
+            if score < 0.35:
+                return "easy"
+            if score < 0.65:
+                return "medium"
+            return "hard"
+
+        return [
+            Task(
+                task_id=at.id,
+                user_id=user_id,
+                title=at.title,
+                description=at.description,
+                estimated_duration=at.estimated_minutes,
+                difficulty=_difficulty_label(at.difficulty),
+                prerequisites=at.prerequisites,
+                status="pending",
+            )
+            for at in atomic_tasks
+        ]
 
     def _load_retrieval_context(
         self,

@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Study Assistant - Voice Enabled</title>
+
+    <!-- Google Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            max-width: 900px;
+            margin: 0 auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9em;
+        }
+
+        .input-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            min-width: 200px;
+            padding: 14px 18px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* 🎤 Voice button styles */
+        .mic-button {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: none;
+            color: white;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+        }
+
+        .mic-button:hover:not(:disabled) {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.5);
+        }
+
+        .mic-button.listening {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            animation: pulse 1.5s infinite;
+        }
+
+        .mic-button.processing {
+            background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        /* Status indicators */
+        .status {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+        }
+
+        .status.show {
+            display: flex;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .status.warning {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .answer {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 25px;
+            border-radius: 12px;
+            line-height: 1.8;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .answer.show {
+            display: block;
+        }
+
+        .answer h2 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 1.5em;
+        }
+
+        .answer-content {
+            color: #444;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .voice-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .voice-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #f5f5f5;
+            border-radius: 20px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .voice-toggle input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        .voice-toggle.active {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎓 AI Study Assistant</h1>
+        <p class="subtitle">Ask questions and get intelligent answers with voice interaction</p>
+
+        <!-- Status messages -->
+        <div id="status" class="status"></div>
+
+        <!-- Input section -->
+        <div class="input-section">
+            <input type="text"
+                   id="questionInput"
+                   name="question"
+                   placeholder="Ask your question or click the microphone..."
+                   value="{{ question }}"
+                   autocomplete="off">
+
+            <!-- 🎤 Voice input button -->
+            <button type="button"
+                    id="micButton"
+                    class="mic-button"
+                    title="Click to speak">
+                <span class="material-icons" id="micIcon">mic</span>
+            </button>
+
+            <button type="button" id="askButton">
+                <span class="material-icons">search</span>
+                Ask
+            </button>
+        </div>
+
+        <!-- Voice controls -->
+        <div class="voice-controls">
+            <label class="voice-toggle" id="voiceToggle">
+                <input type="checkbox" id="voiceOutput" checked>
+                <span>🔊 Voice Output</span>
+            </label>
+        </div>
+
+        <!-- Answer section -->
+        {% if answer %}
+        <div class="answer show" id="answerSection">
+            <h2>💡 AI Answer:</h2>
+            <div class="answer-content" id="answerContent">{{ answer }}</div>
+        </div>
+        {% else %}
+        <div class="answer" id="answerSection">
+            <h2>💡 AI Answer:</h2>
+            <div class="answer-content" id="answerContent"></div>
+        </div>
+        {% endif %}
+    </div>
+
+<script>
+// Voice recognition using Web Speech API
+let recognition = null;
+let isListening = false;
+let isProcessing = false;
+
+// Initialize Web Speech API
+function initSpeechRecognition() {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US'; // Can be changed to 'fr-FR' or other languages
+
+        recognition.onstart = () => {
+            isListening = true;
+            updateMicButton('listening');
+            showStatus('🎤 Listening... Speak now!', 'info');
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById('questionInput').value = transcript;
+            showStatus(`✅ Heard: "${transcript}"`, 'success');
+            updateMicButton('idle');
+            isListening = false;
+            
+            // Auto-submit if voice output is enabled
+            if (document.getElementById('voiceOutput').checked) {
+                setTimeout(() => askQuestion(transcript, true), 500);
+            }
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+            let errorMsg = 'Speech recognition error. ';
+            if (event.error === 'no-speech') {
+                errorMsg += 'No speech detected.';
+            } else if (event.error === 'not-allowed') {
+                errorMsg += 'Microphone permission denied.';
+            } else {
+                errorMsg += event.error;
+            }
+            showStatus(errorMsg, 'error');
+            updateMicButton('idle');
+            isListening = false;
+        };
+
+        recognition.onend = () => {
+            if (isListening) {
+                updateMicButton('idle');
+                isListening = false;
+            }
+        };
+    } else {
+        console.warn('Web Speech API not supported. Falling back to server-side recognition.');
+        showStatus('⚠️ Browser voice recognition not available. Using server-side recognition.', 'warning');
+    }
+}
+
+// Update microphone button state
+function updateMicButton(state) {
+    const button = document.getElementById('micButton');
+    const icon = document.getElementById('micIcon');
+    
+    button.classList.remove('listening', 'processing', 'idle');
+    button.classList.add(state);
+    
+    if (state === 'listening') {
+        icon.textContent = 'mic';
+        button.disabled = false;
+    } else if (state === 'processing') {
+        icon.textContent = 'hourglass_empty';
+        button.disabled = true;
+    } else {
+        icon.textContent = 'mic';
+        button.disabled = false;
+    }
+}
+
+// Show status message
+function showStatus(message, type = 'info') {
+    const statusDiv = document.getElementById('status');
+    statusDiv.textContent = message;
+    statusDiv.className = `status ${type} show`;
+    
+    // Auto-hide after 5 seconds for non-error messages
+    if (type !== 'error') {
+        setTimeout(() => {
+            statusDiv.classList.remove('show');
+        }, 5000);
+    }
+}
+
+// Ask question
+async function askQuestion(questionText = null, useVoice = false) {
+    const question = questionText || document.getElementById('questionInput').value.trim();
+    
+    if (!question) {
+        showStatus('⚠️ Please enter a question or use voice input.', 'warning');
+        return;
+    }
+
+    isProcessing = true;
+    const askButton = document.getElementById('askButton');
+    const micButton = document.getElementById('micButton');
+    
+    askButton.disabled = true;
+    micButton.disabled = true;
+    askButton.innerHTML = '<span class="spinner"></span> Processing...';
+    
+    showStatus('🔍 Searching for information...', 'info');
+    
+    const voiceOutput = document.getElementById('voiceOutput').checked || useVoice;
+    
+    try {
+        const response = await fetch('/api/ask', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                question: question,
+                voice: voiceOutput
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.success) {
+            // Display answer
+            const answerSection = document.getElementById('answerSection');
+            const answerContent = document.getElementById('answerContent');
+            
+            answerContent.textContent = data.answer;
+            answerSection.classList.add('show');
+            
+            showStatus('✅ Answer generated successfully!', 'success');
+            
+            // Speak answer if voice output is enabled
+            if (voiceOutput && data.answer) {
+                showStatus('🔊 Speaking answer...', 'info');
+                speakAnswer(data.answer);
+            }
+        } else {
+            showStatus(`❌ Error: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showStatus(`❌ Network error: ${error.message}`, 'error');
+    } finally {
+        isProcessing = false;
+        askButton.disabled = false;
+        micButton.disabled = false;
+        askButton.innerHTML = '<span class="material-icons">search</span> Ask';
+    }
+}
+
+// Speak answer using Web Speech API
+function speakAnswer(text) {
+    if ('speechSynthesis' in window) {
+        // Cancel any ongoing speech
+        window.speechSynthesis.cancel();
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        
+        utterance.onstart = () => {
+            showStatus('🔊 Speaking answer...', 'info');
+        };
+        
+        utterance.onend = () => {
+            showStatus('✅ Finished speaking', 'success');
+        };
+        
+        utterance.onerror = (event) => {
+            console.error('Speech synthesis error:', event);
+            showStatus('⚠️ Speech synthesis error', 'warning');
+        };
+        
+        window.speechSynthesis.speak(utterance);
+    } else {
+        // Fallback: use server-side TTS
+        fetch('/api/voice/speak', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ text: text })
+        }).catch(err => {
+            console.error('Server-side TTS error:', err);
+        });
+    }
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    initSpeechRecognition();
+    
+    // Microphone button
+    document.getElementById('micButton').addEventListener('click', () => {
+        if (isListening) {
+            if (recognition) {
+                recognition.stop();
+            }
+            updateMicButton('idle');
+            isListening = false;
+        } else if (!isProcessing) {
+            if (recognition) {
+                recognition.start();
+            } else {
+                // Fallback to server-side recognition
+                showStatus('🎤 Using server-side recognition...', 'info');
+                updateMicButton('processing');
+                fetch('/api/voice/listen', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timeout: 5 })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    updateMicButton('idle');
+                    if (data.success) {
+                        document.getElementById('questionInput').value = data.text;
+                        showStatus(`✅ Heard: "${data.text}"`, 'success');
+                        if (document.getElementById('voiceOutput').checked) {
+                            setTimeout(() => askQuestion(data.text, true), 500);
+                        }
+                    } else {
+                        showStatus(`❌ ${data.error}`, 'error');
+                    }
+                })
+                .catch(err => {
+                    updateMicButton('idle');
+                    showStatus(`❌ Error: ${err.message}`, 'error');
+                });
+            }
+        }
+    });
+    
+    // Ask button
+    document.getElementById('askButton').addEventListener('click', () => {
+        askQuestion();
+    });
+    
+    // Enter key in input
+    document.getElementById('questionInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !isProcessing) {
+            askQuestion();
+        }
+    });
+    
+    // Voice toggle
+    document.getElementById('voiceOutput').addEventListener('change', (e) => {
+        const toggle = document.getElementById('voiceToggle');
+        if (e.target.checked) {
+            toggle.classList.add('active');
+        } else {
+            toggle.classList.remove('active');
+            // Stop any ongoing speech
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+        }
+    });
+    
+    // Initialize voice toggle state
+    if (document.getElementById('voiceOutput').checked) {
+        document.getElementById('voiceToggle').classList.add('active');
+    }
+});
+</script>
+
+</body>
+</html>
