@@ -2,7 +2,7 @@
 
 import os
 from pymongo import MongoClient
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 
@@ -37,13 +37,15 @@ class SchedulingService:
         current_time = study_plan.get("start_date", datetime.now())
         
         for task in atomic_tasks:
+            duration = task.get("estimated_minutes", 30)
             session = {
                 "task_id": task["id"],
                 "start_datetime": current_time,
-                "end_datetime": current_time,  # TODO: Calculate based on duration
-                "duration_minutes": task.get("estimated_minutes", 30)
+                "end_datetime": current_time + timedelta(minutes=duration),
+                "duration_minutes": duration
             }
             sessions.append(session)
+            current_time = current_time + timedelta(minutes=duration)
         
         # Save scheduling
         scheduling_doc = {

@@ -228,7 +228,21 @@ class FatigueAdapter:
 
             # Calculate derived metrics
             blink_rate = blink_count * 2  # Rough estimate
-            brow_dist = 0.5  # Placeholder
+
+            # Compute real brow_dist from blendshapes (output_face_blendshapes=True)
+            brow_dist = 0.5  # Default fallback
+            if results.face_blendshapes and len(results.face_blendshapes) > 0:
+                blendshapes = results.face_blendshapes[0]
+                brow_down_left = 0.0
+                brow_down_right = 0.0
+                for bs in blendshapes:
+                    if bs.category_name == 'browDownLeft':
+                        brow_down_left = bs.score
+                    elif bs.category_name == 'browDownRight':
+                        brow_down_right = bs.score
+                # Lower brow_dist = more furrowed = more fatigued
+                # Matches FatigueRules expectation: brow_dist < threshold → fatigue
+                brow_dist = 1.0 - (brow_down_left + brow_down_right) / 2.0
 
             # Compute fatigue score
             fatigue_prob, suggest_break, fatigue_level, factors = (
