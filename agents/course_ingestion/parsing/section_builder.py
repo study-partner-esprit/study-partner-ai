@@ -1,5 +1,24 @@
 import re
-from agents.course_ingestion.enrichment.llm_enricher import generate_subtopic_title
+from agents.course_ingestion.enrichment.llm_enricher import generate_subtopic_title, clean_metadata
+
+
+# Patterns that indicate a line is metadata rather than a real title
+_METADATA_PATTERNS = [
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),  # email
+    re.compile(r"\b(Prof\.?|Professor|Dr\.?|Docteur|M\.|Mme|Madame|Monsieur|Mr\.|Mrs\.|Ms\.)\s+[A-Z]", re.IGNORECASE),  # title + name
+    re.compile(r"\b(University|Université|Institut|École|Ecole|ESPRIT|Polytechnique)\b", re.IGNORECASE),  # institution
+    re.compile(r"\b(Plan\s+module|Module\s+plan|Course\s+outline|Plan\s+de\s+cours)\b", re.IGNORECASE),  # course admin
+    re.compile(r"\b[A-Z]{2,4}[-_]?\d{2,4}\b"),  # course code e.g. CS101
+    re.compile(r"\b(Fall|Spring|Summer|Autumn|Semester|Trimestre)\s+\d{4}\b", re.IGNORECASE),  # semester
+]
+
+
+def _is_metadata_heavy(text: str) -> bool:
+    """Return True if the text contains metadata patterns that make it unsuitable as a title."""
+    for pattern in _METADATA_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
 
 
 def build_subtopics(sections):
@@ -19,24 +38,33 @@ def build_subtopics(sections):
 
         # Generate meaningful title
         if sec["title"] and not sec["title"].startswith("•"):
-            title = sec["title"].strip()
+            candidate = clean_metadata(sec["title"].strip())
         elif content_text:
-            # Use first meaningful line as temporary title
+            # Use first meaningful line as candidate
             first_line = sec["content"][0] if sec["content"] else f"Subtopic {idx}"
-            title = first_line[:120].strip() if len(first_line) > 0 else f"Subtopic {idx}"
+            candidate = clean_metadata(first_line[:120].strip()) if first_line else f"Subtopic {idx}"
         else:
-            title = f"Subtopic {idx}"
+            candidate = f"Subtopic {idx}"
 
-        # If the title is generic or too short, try generating a concise title using LLM
-        title_words = len([w for w in title.split() if w.isalpha()])
-        if title.lower().startswith("subtopic") or title_words < 2:
+        # Determine whether we should generate a proper title via LLM:
+        # - title is generic/short, OR
+        # - the raw source text contained metadata (email, names, institution)
+        raw_source = (sec["title"] or (sec["content"][0] if sec["content"] else "")).strip()
+        candidate_words = len([w for w in candidate.split() if w.isalpha()])
+        needs_llm_title = (
+            candidate.lower().startswith("subtopic")
+            or candidate_words < 2
+            or _is_metadata_heavy(raw_source)
+        )
+
+        if needs_llm_title:
             try:
                 generated = generate_subtopic_title(content_text)
-                if generated:
-                    title = generated
+                title = generated if generated else (candidate if candidate_words >= 2 else f"Subtopic {idx}")
             except Exception:
-                # fall back to existing title
-                pass
+                title = candidate if candidate_words >= 2 else f"Subtopic {idx}"
+        else:
+            title = candidate
 
         # Create summary from first 2-3 sentences (not just chars)
         sentences = re.split(r"[.!?]\s+", content_text)
