@@ -139,6 +139,11 @@ class CoachRequest(BaseModel):
     user_id: str
     ignored_count: int = 0
     do_not_disturb: bool = False
+    # Live signal overrides from frontend webcam pipeline
+    focus_score: Optional[float] = None
+    focus_state: Optional[str] = None
+    fatigue_score: Optional[float] = None
+    fatigue_state: Optional[str] = None
 
 
 class SignalProcessingRequest(BaseModel):
@@ -538,6 +543,10 @@ async def get_coach_decision(
             ignored_count=request.ignored_count,
             do_not_disturb=request.do_not_disturb,
             trace_id=x_trace_id,
+            live_focus_score=request.focus_score,
+            live_focus_state=request.focus_state,
+            live_fatigue_score=request.fatigue_score,
+            live_fatigue_state=request.fatigue_state,
         )
         
         # If coach suggests schedule changes, implement them

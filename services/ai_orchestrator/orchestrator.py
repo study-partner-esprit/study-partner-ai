@@ -43,6 +43,10 @@ class AIOrchestrator:
         ignored_count: int = 0,
         do_not_disturb: bool = False,
         trace_id: Optional[str] = None,
+        live_focus_score: Optional[float] = None,
+        live_focus_state: Optional[str] = None,
+        live_fatigue_score: Optional[float] = None,
+        live_fatigue_state: Optional[str] = None,
     ) -> CoachAction:
         """
         Execute the Coach agent with full user context.
@@ -67,26 +71,43 @@ class AIOrchestrator:
             extra={"user_id": user_id, "trace_id": trace_id},
         )
 
+        # --- Check if live signals were provided by the frontend --- #
+        has_live_signals = (
+            live_focus_score is not None
+            or live_focus_state is not None
+            or live_fatigue_score is not None
+            or live_fatigue_state is not None
+        )
+
         # --- Parallel I/O: fetch tasks + signal snapshot simultaneously --- #
         scheduled_tasks: list[ScheduledTask] = []
         signal_snapshot: Optional[SignalSnapshot] = None
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            fut_tasks = pool.submit(self._fetch_scheduled_tasks)
-            fut_signals = pool.submit(self._fetch_signal_snapshot, user_id)
+        if has_live_signals:
+            # Skip expensive DB lookup — use live webcam values directly
+            logger.info(
+                "orchestrator_using_live_signals",
+                extra={"user_id": user_id, "trace_id": trace_id},
+            )
+            # Only fetch scheduled tasks
+            scheduled_tasks = self._fetch_scheduled_tasks()
+        else:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_tasks = pool.submit(self._fetch_scheduled_tasks)
+                fut_signals = pool.submit(self._fetch_signal_snapshot, user_id)
 
-            for fut in as_completed([fut_tasks, fut_signals]):
-                try:
-                    result = fut.result()
-                    if fut is fut_tasks:
-                        scheduled_tasks = result
-                    else:
-                        signal_snapshot = result
-                except Exception as exc:
-                    logger.warning(
-                        "orchestrator_parallel_fetch_error",
-                        extra={"trace_id": trace_id, "error": str(exc)},
-                    )
+                for fut in as_completed([fut_tasks, fut_signals]):
+                    try:
+                        result = fut.result()
+                        if fut is fut_tasks:
+                            scheduled_tasks = result
+                        else:
+                            signal_snapshot = result
+                    except Exception as exc:
+                        logger.warning(
+                            "orchestrator_parallel_fetch_error",
+                            extra={"trace_id": trace_id, "error": str(exc)},
+                        )
 
         # Step 3: Build CoachInput
         coach_input = self._build_coach_input(
@@ -96,6 +117,10 @@ class AIOrchestrator:
             current_time=current_time,
             ignored_count=ignored_count,
             do_not_disturb=do_not_disturb,
+            live_focus_score=live_focus_score,
+            live_focus_state=live_focus_state,
+            live_fatigue_score=live_fatigue_score,
+            live_fatigue_state=live_fatigue_state,
         )
         
         # Step 4: Execute Coach agent (history lookup + action persistence inside)
@@ -172,24 +197,43 @@ class AIOrchestrator:
         current_time: datetime,
         ignored_count: int,
         do_not_disturb: bool,
+        live_focus_score: Optional[float] = None,
+        live_focus_state: Optional[str] = None,
+        live_fatigue_score: Optional[float] = None,
+        live_fatigue_state: Optional[str] = None,
     ) -> CoachInput:
         """
         Build the CoachInput from all available data.
+        Live signal params take precedence over DB snapshot.
         
         Returns:
             A fully populated CoachInput.
         """
-        if signal_snapshot is not None:
+        # Priority: live webcam signals > DB snapshot > defaults
+        if live_focus_score is not None or live_focus_state is not None:
+            focus_state = FocusState(
+                state=live_focus_state or "Drifting",
+                score=live_focus_score if live_focus_score is not None else 0.5,
+            )
+        elif signal_snapshot is not None:
             focus_state = FocusState(
                 state=signal_snapshot.focus_state,
                 score=signal_snapshot.focus_score,
             )
+        else:
+            focus_state = FocusState(state="Drifting", score=0.5)
+
+        if live_fatigue_score is not None or live_fatigue_state is not None:
+            fatigue_state = FatigueState(
+                state=live_fatigue_state or "Moderate",
+                score=live_fatigue_score if live_fatigue_score is not None else 0.3,
+            )
+        elif signal_snapshot is not None:
             fatigue_state = FatigueState(
                 state=signal_snapshot.fatigue_state,
                 score=signal_snapshot.fatigue_score,
             )
         else:
-            focus_state = FocusState(state="Drifting", score=0.5)
             fatigue_state = FatigueState(state="Moderate", score=0.3)
 
         affective_state = "engaged"  # derive from signals in future
