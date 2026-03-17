@@ -6,8 +6,10 @@ and a `create_app()` helper.
 """
 
 import uuid
+import time
+import os
 from flask import Flask, render_template, request, jsonify
-from .retrieval import apify_web_search
+from .retrieval import web_search
 from .extraction import extract_text
 from .llm import ask_llm
 from .services import get_voice_service, VoiceConfig
@@ -38,18 +40,47 @@ def process_question(
     if not question or not question.strip():
         return {"success": False, "error": "No question provided", "answer": ""}
 
-    urls = apify_web_search(question, max_results=5)
+    fallback_answer = (
+        "I couldn't retrieve web sources right now, so I can't provide a source-grounded answer at the moment. "
+        "Please try again in a bit or rephrase your question with more specific keywords."
+    )
+
+    max_pipeline_seconds = int(os.getenv("SEARCH_PIPELINE_TIMEOUT_SECONDS", "90"))
+    pipeline_started_at = time.time()
+
+    urls = web_search(question, max_results=5)
     if not urls:
-        return {"success": False, "error": "No search results found.", "answer": ""}
+        return {
+            "success": True,
+            "question": question,
+            "answer": fallback_answer,
+            "sources_count": 0,
+            "urls": [],
+            "trace_id": trace_id,
+            "degraded": True,
+            "reason": "No search results found.",
+        }
 
     content = ""
     for url in urls:
+        if time.time() - pipeline_started_at >= max_pipeline_seconds:
+            break
         extracted = extract_text(url)
         if extracted:
             content += extracted + "\n\n"
 
     if not content:
-        return {"success": False, "error": "No content extracted from sources", "answer": ""}
+        timed_out = time.time() - pipeline_started_at >= max_pipeline_seconds
+        return {
+            "success": True,
+            "question": question,
+            "answer": fallback_answer,
+            "sources_count": len(urls),
+            "urls": urls,
+            "trace_id": trace_id,
+            "degraded": True,
+            "reason": "Search pipeline time budget exceeded" if timed_out else "No content extracted from sources",
+        }
 
     prompt = (
         f"Question:\n{question}\n\n"

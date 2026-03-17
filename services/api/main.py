@@ -947,8 +947,8 @@ async def search_ask(req: SearchAskRequest, x_trace_id: Optional[str] = Header(N
             session_id=req.session_id,
             trace_id=trace_id,
         )
-        if not result.get("success"):
-            raise HTTPException(status_code=503, detail=result.get("error", "Search failed"))
+        if not result.get("success") and result.get("error") == "No question provided":
+            raise HTTPException(status_code=400, detail="No question provided")
         return result
     except HTTPException:
         raise

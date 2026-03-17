@@ -38,10 +38,10 @@ def ask_llm(
             json={
                 "model": model,
                 "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 1024,
+                "temperature": 0.1,
+                "max_tokens": 2000,
             },
-            timeout=150,
+            timeout=30
         )
         if response.status_code == 200:
             result = response.json()
