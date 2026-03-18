@@ -23,16 +23,16 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Dict, Optional
 
-
 # --- Tunable constants ------------------------------------------------------ #
 
-FOCUS_ALPHA = 0.3    # Smoothing factor for focus   (lower = smoother)
+FOCUS_ALPHA = 0.3  # Smoothing factor for focus   (lower = smoother)
 FATIGUE_ALPHA = 0.2  # Smoothing factor for fatigue (lower = smoother)
 
 
 # ---------------------------------------------------------------------------- #
 # Public dataclass returned by update()                                         #
 # ---------------------------------------------------------------------------- #
+
 
 @dataclass
 class EMAResult:
@@ -47,11 +47,12 @@ class EMAResult:
 # Internal per-user state                                                       #
 # ---------------------------------------------------------------------------- #
 
+
 @dataclass
 class _UserEMA:
-    smooth_focus: float = 0.5    # Initialise to neutral
+    smooth_focus: float = 0.5  # Initialise to neutral
     smooth_fatigue: float = 0.2  # Initialise to low fatigue
-    n_updates: int = 0           # Number of updates (useful for warm-up logic)
+    n_updates: int = 0  # Number of updates (useful for warm-up logic)
 
 
 class EMAState:

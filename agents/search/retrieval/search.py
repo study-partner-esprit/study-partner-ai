@@ -72,7 +72,9 @@ def apify_web_search(query, max_results=5, wait_timeout=12):
         if not run_id:
             return []
 
-        run_status_url = f"https://api.apify.com/v2/actor-runs/{run_id}?token={apify_api_key}"
+        run_status_url = (
+            f"https://api.apify.com/v2/actor-runs/{run_id}?token={apify_api_key}"
+        )
         start_time = time.time()
 
         while time.time() - start_time < wait_timeout:
@@ -96,12 +98,25 @@ def apify_web_search(query, max_results=5, wait_timeout=12):
                             if isinstance(organic_results, list) and organic_results:
                                 for result in organic_results:
                                     url = result.get("url") or result.get("link")
-                                    if url and isinstance(url, str) and url.startswith("http"):
+                                    if (
+                                        url
+                                        and isinstance(url, str)
+                                        and url.startswith("http")
+                                    ):
                                         if url not in urls:
                                             urls.append(url)
                             if not urls:
-                                url = item.get("url") or item.get("link") or item.get("href")
-                                if url and isinstance(url, str) and url.startswith("http") and "google.com/search" not in url:
+                                url = (
+                                    item.get("url")
+                                    or item.get("link")
+                                    or item.get("href")
+                                )
+                                if (
+                                    url
+                                    and isinstance(url, str)
+                                    and url.startswith("http")
+                                    and "google.com/search" not in url
+                                ):
                                     urls.append(url)
                 elif isinstance(items, dict):
                     for key in ["results", "organicResults", "items", "data"]:

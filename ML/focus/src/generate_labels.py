@@ -30,7 +30,7 @@ for folder, label in folder_to_label.items():
     folder_path = os.path.join(data_dir, folder)
     if os.path.exists(folder_path):
         for file in os.listdir(folder_path):
-            if file.lower().endswith(('.jpg', '.jpeg', '.png')):
+            if file.lower().endswith((".jpg", ".jpeg", ".png")):
                 image_path = os.path.join(data_dir, folder, file)
                 entries.append({"image_path": image_path, "label": label})
 
@@ -44,13 +44,13 @@ print("=" * 40)
 print(f"Total images: {len(df)}")
 print()
 print("Counts per label:")
-print(df['label'].value_counts())
+print(df["label"].value_counts())
 print()
 print("Counts per source folder:")
-df['source'] = df['image_path'].apply(lambda x: '/'.join(x.split('/')[2:4]))
-print(df.groupby(['source', 'label']).size())
+df["source"] = df["image_path"].apply(lambda x: "/".join(x.split("/")[2:4]))
+print(df.groupby(["source", "label"]).size())
 print()
 
 # Save to CSV
-df[['image_path', 'label']].to_csv("data/labels.csv", index=False)
+df[["image_path", "label"]].to_csv("data/labels.csv", index=False)
 print("Saved to data/labels.csv")

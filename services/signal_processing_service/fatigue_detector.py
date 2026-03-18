@@ -24,7 +24,10 @@ def _get_adapter_class():
     global _adapter_class
     if _adapter_class is None:
         try:
-            from services.signal_processing_service.fatigue_adapter import FatigueAdapter
+            from services.signal_processing_service.fatigue_adapter import (
+                FatigueAdapter,
+            )
+
             _adapter_class = FatigueAdapter
         except ImportError as e:
             logger.warning(f"FatigueAdapter not available: {e}")
@@ -54,7 +57,9 @@ class FatigueDetector:
                 if self.model_loaded:
                     logger.info("Fatigue detector (rules-based) loaded successfully")
                 else:
-                    logger.warning("FatigueAdapter instantiated but model not loaded (missing model file?)")
+                    logger.warning(
+                        "FatigueAdapter instantiated but model not loaded (missing model file?)"
+                    )
             else:
                 logger.warning("FatigueAdapter unavailable – returning mock data")
         except Exception as e:
@@ -88,7 +93,9 @@ class FatigueDetector:
                 return self._mock_result(error="Unable to decode frame")
 
             # Delegate to the rules-based adapter
-            fatigue_state, fatigue_score, confidence = self.adapter.get_fatigue_signal(frame=frame)
+            fatigue_state, fatigue_score, confidence = self.adapter.get_fatigue_signal(
+                frame=frame
+            )
 
             # Map score (0-1 float) → 0-100 int scale
             score_pct = round(fatigue_score * 100, 1)

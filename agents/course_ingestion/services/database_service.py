@@ -49,10 +49,10 @@ class DatabaseService:
     def get_course_by_id(self, course_id: str) -> dict:
         """
         Get a course by ID and return the raw MongoDB document.
-        
+
         Args:
             course_id: The course ID as a string
-            
+
         Returns:
             The raw MongoDB document as a dict
         """
@@ -80,9 +80,7 @@ class DatabaseService:
             # Remove study_plan_id from the document data
             doc_data = {k: v for k, v in study_plan.items() if k != "study_plan_id"}
             result = self.study_plan_collection.replace_one(
-                {"_id": study_plan_id}, 
-                doc_data,
-                upsert=True
+                {"_id": study_plan_id}, doc_data, upsert=True
             )
             return str(study_plan_id)
         else:
@@ -115,7 +113,7 @@ class DatabaseService:
             "span_days": scheduled_sessions.get("span_days", 1),
             "fallback_used": scheduled_sessions.get("fallback_used", False),
             "skipped_tasks": scheduled_sessions.get("skipped_tasks", []),
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
         }
         result = self.task_scheduling_collection.insert_one(doc)
         return str(result.inserted_id)

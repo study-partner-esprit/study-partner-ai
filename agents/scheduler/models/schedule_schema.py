@@ -32,7 +32,7 @@ class ScheduledSession(BaseModel):
         ge=0.0,
         description="Heuristic score of the selected time slot",
     )
-    
+
     scheduled: bool = Field(
         default=True,
         description="Whether this session was successfully scheduled",
@@ -56,12 +56,12 @@ class StudyPlan(BaseModel):
         default=False,
         description="True if the scheduler used the fallback strategy",
     )
-    
+
     skipped_tasks: List[str] = Field(
         default_factory=list,
         description="Task IDs that could not be scheduled (missing prerequisites, no space, etc.)",
     )
-    
+
     span_days: int = Field(
         default=1,
         ge=1,

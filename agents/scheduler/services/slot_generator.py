@@ -15,13 +15,13 @@ def generate_free_slots(
 ) -> List[TimeSlot]:
     """
     Generate free time slots by subtracting busy slots from work window.
-    
+
     Args:
         day_start: Start of work day
         day_end: End of work day
         busy_slots: List of busy time slots
         min_slot_minutes: Minimum duration for a free slot to be considered
-        
+
     Returns:
         List of free TimeSlot objects, sorted by start time
     """
@@ -47,5 +47,5 @@ def generate_free_slots(
         f"Generated {len(free)} free slots for {day_start.date()} "
         f"(work window {day_start.time()}-{day_end.time()})"
     )
-    
+
     return free

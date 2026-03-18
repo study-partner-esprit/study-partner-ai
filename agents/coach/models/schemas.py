@@ -26,7 +26,10 @@ class FatigueState(BaseModel):
 
 class ScheduleChange(BaseModel):
     """Represents a scheduling change requested by the Coach agent."""
-    action: Literal["add_break", "extend_task", "reschedule_task", "cancel_task", "suspend_session"]
+
+    action: Literal[
+        "add_break", "extend_task", "reschedule_task", "cancel_task", "suspend_session"
+    ]
     duration_minutes: Optional[int] = None
     new_start_time: Optional[datetime] = None
     affected_task_ids: List[str] = []
@@ -38,9 +41,7 @@ class CoachInput(BaseModel):
     current_time: datetime
     focus_state: FocusState
     fatigue_state: FatigueState
-    affective_state: Literal[
-        "engaged", "frustrated", "stressed", "bored", "confident"
-    ]
+    affective_state: Literal["engaged", "frustrated", "stressed", "bored", "confident"]
     ignored_count: int = 0
     do_not_disturb: bool = False
     is_late: bool = False
@@ -48,22 +49,18 @@ class CoachInput(BaseModel):
 
     # Current task context — enriches prompt and history logging
     current_task_title: Optional[str] = None
-    current_task_difficulty: Optional[float] = None   # 0.0 – 1.0
+    current_task_difficulty: Optional[float] = None  # 0.0 – 1.0
     current_task_subject: Optional[str] = None
     current_task_key_concepts: Optional[List[str]] = None
 
 
 class CoachAction(BaseModel):
     action_type: Literal[
-        "nudge",
-        "encourage",
-        "suggest_break",
-        "renegotiate_task",
-        "silence"
+        "nudge", "encourage", "suggest_break", "renegotiate_task", "silence"
     ]
     message: Optional[str] = None
     reasoning: str
     target_task_id: Optional[str] = None
-    
+
     # NEW: Optional scheduling directives for autonomous execution
     schedule_changes: Optional[ScheduleChange] = None

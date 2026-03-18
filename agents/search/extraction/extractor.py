@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
+
 def extract_text(url, max_chars=12000, max_bytes=400000, request_timeout=(3, 7)):
     try:
         response = requests.get(
@@ -15,7 +16,10 @@ def extract_text(url, max_chars=12000, max_bytes=400000, request_timeout=(3, 7))
         response.raise_for_status()
 
         content_type = (response.headers.get("Content-Type") or "").lower()
-        if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
+        if (
+            "text/html" not in content_type
+            and "application/xhtml+xml" not in content_type
+        ):
             return ""
 
         chunks = []

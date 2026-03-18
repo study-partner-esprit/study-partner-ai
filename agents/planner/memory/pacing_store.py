@@ -28,9 +28,9 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 PACING_COLLECTION = "pacing_data"
-MAX_RECORDS = 20        # rolling window per (user, subject)
+MAX_RECORDS = 20  # rolling window per (user, subject)
 DEFAULT_FACTOR = 1.0
-MIN_RECORDS = 3         # minimum records needed before we trust the estimate
+MIN_RECORDS = 3  # minimum records needed before we trust the estimate
 
 
 class PacingStore:
@@ -45,6 +45,7 @@ class PacingStore:
         self._db = None
         try:
             from services.database import get_db
+
             self._db = get_db()
         except Exception as exc:
             logger.warning("pacing_store_no_db", extra={"error": str(exc)})
@@ -171,9 +172,7 @@ class PacingStore:
             if subject_tag:
                 query["subject_tag"] = subject_tag
             records = list(
-                col.find(query, {"ratio": 1})
-                   .sort("ts", -1)
-                   .limit(MAX_RECORDS)
+                col.find(query, {"ratio": 1}).sort("ts", -1).limit(MAX_RECORDS)
             )
             if len(records) < MIN_RECORDS:
                 return None
@@ -185,4 +184,3 @@ class PacingStore:
                 extra={"user_id": user_id, "error": str(exc)},
             )
             return None
-

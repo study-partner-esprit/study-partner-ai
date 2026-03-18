@@ -3,9 +3,14 @@ import time
 import numpy as np
 from scipy.spatial import distance as dist
 from config import (
-    EYE_AR_THRESH, SMOOTH_BUFFER_SIZE, BLINK_TIME, DROWSY_TIME,
-    MOUTH_AR_THRESH, YAWN_LIMIT
+    EYE_AR_THRESH,
+    SMOOTH_BUFFER_SIZE,
+    BLINK_TIME,
+    DROWSY_TIME,
+    MOUTH_AR_THRESH,
+    YAWN_LIMIT,
 )
+
 
 class FaceFeatures:
     """

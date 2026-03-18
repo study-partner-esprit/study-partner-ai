@@ -1,6 +1,7 @@
 import os
 from typing import Dict
 
+
 class VoiceConfig:
     STT_LANGUAGE = os.getenv("STT_LANGUAGE", "en-US")
     STT_TIMEOUT = 5

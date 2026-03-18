@@ -3,7 +3,15 @@
 This service provides RESTful endpoints for the frontend to interact with all AI agents.
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks, Header
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    BackgroundTasks,
+    Header,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
@@ -15,13 +23,17 @@ import sys
 import json
 import subprocess
 from pathlib import Path
+
 # Ensure project root is on sys.path before importing local packages
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.course_ingestion.agent import ingest_course
-from agents.course_ingestion.enrichment.task_generator import generate_tasks_from_course, generate_tasks_simple
+from agents.course_ingestion.enrichment.task_generator import (
+    generate_tasks_from_course,
+    generate_tasks_simple,
+)
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.planner.agent import PlannerAgent
 from agents.planner.models.task_graph import PlannerInput
@@ -41,7 +53,10 @@ for _key in _REQUIRED_ENV:
     if not os.getenv(_key):
         logger.warning(
             "missing_env_var",
-            extra={"var": _key, "hint": "AI features that require this key will fail at runtime"},
+            extra={
+                "var": _key,
+                "hint": "AI features that require this key will fail at runtime",
+            },
         )
 
 
@@ -55,6 +70,7 @@ def convert_objectid_to_str(obj):
         return [convert_objectid_to_str(item) for item in obj]
     else:
         return obj
+
 
 app = FastAPI(title="Study Partner AI API", version="1.0.0")
 
@@ -78,17 +94,20 @@ _planner_agent = None
 _ai_orchestrator = None
 _schedule_orchestrator = None
 
+
 def get_planner_agent():
     global _planner_agent
     if _planner_agent is None:
         _planner_agent = PlannerAgent()
     return _planner_agent
 
+
 def get_ai_orchestrator():
     global _ai_orchestrator
     if _ai_orchestrator is None:
         _ai_orchestrator = AIOrchestrator()
     return _ai_orchestrator
+
 
 def get_schedule_orchestrator():
     global _schedule_orchestrator
@@ -99,14 +118,21 @@ def get_schedule_orchestrator():
 
 _signal_service = None
 
+
 def get_signal_service():
     """Lazy-load the SignalProcessingService to avoid startup crashes."""
     global _signal_service
     if _signal_service is None:
         try:
-            from services.signal_processing_service.service import SignalProcessingService
+            from services.signal_processing_service.service import (
+                SignalProcessingService,
+            )
+
             _signal_service = SignalProcessingService()
-            logger.info("SignalProcessingService initialised (ready=%s)", _signal_service.is_ready())
+            logger.info(
+                "SignalProcessingService initialised (ready=%s)",
+                _signal_service.is_ready(),
+            )
         except Exception as e:
             logger.warning("SignalProcessingService unavailable: %s", e)
             _signal_service = False  # sentinel: attempted and failed
@@ -114,6 +140,7 @@ def get_signal_service():
 
 
 # ==================== Pydantic Models ====================
+
 
 class CourseIngestionRequest(BaseModel):
     course_title: str
@@ -132,7 +159,9 @@ class PlannerRequest(BaseModel):
     available_time_minutes: int
     start_date: Optional[datetime] = None
     course_id: Optional[str] = None
-    calendar_events: Optional[list] = []  # User's blocked time slots from Node.js backend
+    calendar_events: Optional[list] = (
+        []
+    )  # User's blocked time slots from Node.js backend
 
 
 class CoachRequest(BaseModel):
@@ -152,22 +181,23 @@ class SignalProcessingRequest(BaseModel):
 
 # ==================== Course Ingestion Endpoints ====================
 
+
 @app.post("/api/ai/courses/ingest")
 async def ingest_course_endpoint(
     course_title: str = Form(...),
     user_id: str = Form(...),
     subject_id: str = Form(...),
-    files: List[UploadFile] = File(...)
+    files: List[UploadFile] = File(...),
 ):
     """
     Process course materials and return structured data.
-    
+
     Args:
         course_title: Name of the course
         user_id: User uploading the course
         subject_id: Subject this course belongs to
         files: List of PDF files to process
-    
+
     Returns:
         Processed course data with topics, subtopics, etc.
     """
@@ -180,15 +210,15 @@ async def ingest_course_endpoint(
                 content = await file.read()
                 tmp.write(content)
                 temp_files.append(tmp.name)
-        
+
         try:
             # Process course ingestion synchronously
             course_id = ingest_course(course_title, temp_files)
-            
+
             # Get the processed course data
             db = DatabaseService()
             course_data = db.get_course_by_id(course_id)
-            
+
             # Return course data with topics
             return {
                 "course_id": course_id,
@@ -197,9 +227,9 @@ async def ingest_course_endpoint(
                 "files_count": len(temp_files),
                 "processed_at": datetime.now().isoformat(),
                 "course_title": course_title,
-                "topics": course_data.get("topics", []) if course_data else []
+                "topics": course_data.get("topics", []) if course_data else [],
             }
-            
+
         finally:
             # Cleanup temp files
             for tmp_file in temp_files:
@@ -207,50 +237,56 @@ async def ingest_course_endpoint(
                     os.unlink(tmp_file)
                 except:
                     pass
-                    
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Course processing failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Course processing failed: {str(e)}"
+        )
 
 
 @app.post("/api/ai/courses/generate-tasks")
 async def generate_tasks_from_course_endpoint(request: TaskGenerationRequest):
     """
     Generate study tasks from a course using AI.
-    
+
     Args:
         request: TaskGenerationRequest with course_id, user_id, and course_data
-    
+
     Returns:
         List of generated tasks
     """
     try:
-        course_title = request.course_data.get('title', 'Untitled Course')
-        topics = request.course_data.get('topics', [])
-        
+        course_title = request.course_data.get("title", "Untitled Course")
+        topics = request.course_data.get("topics", [])
+
         if not topics:
-            raise HTTPException(status_code=400, detail="Course has no topics to generate tasks from")
-        
+            raise HTTPException(
+                status_code=400, detail="Course has no topics to generate tasks from"
+            )
+
         # Generate tasks using AI
         try:
             tasks = generate_tasks_from_course(course_title, topics)
-            
+
             # If AI generation fails, use fallback
             if not tasks:
-                logger.warning(f"AI task generation failed, using fallback for course {request.course_id}")
+                logger.warning(
+                    f"AI task generation failed, using fallback for course {request.course_id}"
+                )
                 tasks = generate_tasks_simple(course_title, topics)
-        
+
         except Exception as ai_error:
             logger.error(f"Error in AI task generation: {ai_error}")
             # Fallback to simple task generation
             tasks = generate_tasks_simple(course_title, topics)
-        
+
         return {
             "success": True,
             "course_id": request.course_id,
             "tasks": tasks,
-            "count": len(tasks)
+            "count": len(tasks),
         }
-        
+
     except Exception as e:
         logger.error(f"Task generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Task generation failed: {str(e)}")
@@ -258,17 +294,18 @@ async def generate_tasks_from_course_endpoint(request: TaskGenerationRequest):
 
 # ==================== Planner Endpoints ====================
 
+
 @app.post("/api/ai/planner/create-plan")
 async def create_study_plan(request: PlannerRequest):
     """
     Create a personalized study plan by generating tasks.
-    
+
     This endpoint creates tasks directly instead of a separate study plan concept.
     Tasks are saved to the database and can be accessed via /api/v1/study/tasks
-    
+
     Args:
         request: PlannerRequest with goal, time, and optional course
-    
+
     Returns:
         List of generated tasks with metadata
     """
@@ -276,33 +313,51 @@ async def create_study_plan(request: PlannerRequest):
         # Fetch course documents if course_id provided
         course_knowledge = None
         if request.course_id:
-            from agents.course_ingestion.services.database_service import DatabaseService
+            from agents.course_ingestion.services.database_service import (
+                DatabaseService,
+            )
+
             db_service = DatabaseService()
             course = db_service.get_course_by_id(request.course_id)
             if course:
                 # Convert all ObjectIds to strings for JSON serialization
                 course_knowledge = convert_objectid_to_str(course)
-                print(f"DEBUG: Course knowledge loaded for course_id {request.course_id}")
-                print(f"DEBUG: Course has {len(course_knowledge.get('topics', []))} topics")
-                if course_knowledge.get('topics') and len(course_knowledge['topics']) > 0:
-                    first_topic = course_knowledge['topics'][0]
-                    if 'subtopics' in first_topic and len(first_topic['subtopics']) > 0:
-                        first_subtopic = first_topic['subtopics'][0]
-                        has_tokenized = 'tokenized_chunks' in first_subtopic
-                        has_summary = 'summary' in first_subtopic
-                        print(f"DEBUG: First subtopic has tokenized_chunks: {has_tokenized}, has summary: {has_summary}")
+                print(
+                    f"DEBUG: Course knowledge loaded for course_id {request.course_id}"
+                )
+                print(
+                    f"DEBUG: Course has {len(course_knowledge.get('topics', []))} topics"
+                )
+                if (
+                    course_knowledge.get("topics")
+                    and len(course_knowledge["topics"]) > 0
+                ):
+                    first_topic = course_knowledge["topics"][0]
+                    if "subtopics" in first_topic and len(first_topic["subtopics"]) > 0:
+                        first_subtopic = first_topic["subtopics"][0]
+                        has_tokenized = "tokenized_chunks" in first_subtopic
+                        has_summary = "summary" in first_subtopic
+                        print(
+                            f"DEBUG: First subtopic has tokenized_chunks: {has_tokenized}, has summary: {has_summary}"
+                        )
                         if has_tokenized:
-                            print(f"DEBUG: tokenized_chunks length: {len(first_subtopic['tokenized_chunks'])}")
-                            print(f"DEBUG: First chunk preview: {first_subtopic['tokenized_chunks'][0][:100]}...")
+                            print(
+                                f"DEBUG: tokenized_chunks length: {len(first_subtopic['tokenized_chunks'])}"
+                            )
+                            print(
+                                f"DEBUG: First chunk preview: {first_subtopic['tokenized_chunks'][0][:100]}..."
+                            )
                         if has_summary:
-                            print(f"DEBUG: summary preview: {first_subtopic['summary'][:100]}...")
-        
+                            print(
+                                f"DEBUG: summary preview: {first_subtopic['summary'][:100]}..."
+                            )
+
         # Create planner input
         if request.start_date:
             deadline_iso = request.start_date.isoformat()
         else:
             deadline_iso = (datetime.now() + timedelta(days=7)).isoformat()
-        
+
         planner_input = PlannerInput(
             goal=request.goal,
             deadline_iso=deadline_iso,
@@ -310,48 +365,55 @@ async def create_study_plan(request: PlannerRequest):
             user_id=request.user_id,
             course_knowledge=course_knowledge,
         )
-        
-        print(f"DEBUG: Created planner input with goal: '{request.goal}', course_knowledge: {course_knowledge is not None}")
+
+        print(
+            f"DEBUG: Created planner input with goal: '{request.goal}', course_knowledge: {course_knowledge is not None}"
+        )
         if course_knowledge:
             print(f"DEBUG: Course title: {course_knowledge.get('course_title', 'N/A')}")
-        
+
         # Generate plan using planner agent
         planner_agent = get_planner_agent()
         plan_output = planner_agent.plan(planner_input)
-        
+
         # Convert AtomicTasks to Task format for database
         tasks = []
         for atomic_task in plan_output.task_graph.tasks:
             # Map difficulty to priority
             if atomic_task.difficulty < 0.4:
-                priority = 'low'
+                priority = "low"
             elif atomic_task.difficulty < 0.7:
-                priority = 'medium'
+                priority = "medium"
             else:
-                priority = 'high'
-            
+                priority = "high"
+
             task = {
-                'title': atomic_task.title,
-                'description': atomic_task.description,
-                'priority': priority,
-                'estimatedTime': atomic_task.estimated_minutes,
-                'tags': [request.goal[:50]] if request.goal else [],  # Use goal as a tag
+                "title": atomic_task.title,
+                "description": atomic_task.description,
+                "priority": priority,
+                "estimatedTime": atomic_task.estimated_minutes,
+                "tags": (
+                    [request.goal[:50]] if request.goal else []
+                ),  # Use goal as a tag
             }
             tasks.append(task)
-        
+
         return {
             "success": True,
             "tasks": tasks,
             "count": len(tasks),
-            "total_time": sum(t['estimatedTime'] for t in tasks),
-            "warning": plan_output.warning if hasattr(plan_output, 'warning') else None
+            "total_time": sum(t["estimatedTime"] for t in tasks),
+            "warning": plan_output.warning if hasattr(plan_output, "warning") else None,
         }
-        
+
     except Exception as e:
         logger.error(f"Study plan creation failed: {e}")
         import traceback
+
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to create study plan: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create study plan: {str(e)}"
+        )
 
 
 @app.get("/api/ai/planner/plans/{user_id}")
@@ -359,6 +421,7 @@ async def get_user_plans(user_id: str):
     """Get all study plans for a user."""
     try:
         from agents.planner.rag.prompt_builder import SchedulingService
+
         scheduling_service = SchedulingService()
         plans = scheduling_service.get_user_plans(user_id)
         return {"plans": plans}
@@ -367,6 +430,7 @@ async def get_user_plans(user_id: str):
 
 
 # ==================== Scheduler Endpoints ====================
+
 
 class SchedulerRequest(BaseModel):
     user_id: str
@@ -378,26 +442,26 @@ class SchedulerRequest(BaseModel):
 
 def mix_tasks_intelligently(tasks: List) -> List:
     """
-    Mix tasks from different subjects/plans to avoid scheduling all tasks 
+    Mix tasks from different subjects/plans to avoid scheduling all tasks
     from the same subject consecutively.
-    
+
     Strategy:
     1. Group tasks by tags/subject (first tag indicates subject/course)
     2. Interleave tasks from different groups (round-robin)
     3. Maintain tasks without tags at the end
-    
+
     Args:
         tasks: List of SchedulerTask objects
-    
+
     Returns:
         Reordered list with mixed tasks
     """
     from collections import defaultdict
-    
+
     # Group tasks by their primary tag (subject/course)
     groups = defaultdict(list)
     no_tag_tasks = []
-    
+
     for task in tasks:
         if task.tags and len(task.tags) > 0:
             # Use first tag as grouping key (usually subject/course)
@@ -405,28 +469,30 @@ def mix_tasks_intelligently(tasks: List) -> List:
             groups[primary_tag].append(task)
         else:
             no_tag_tasks.append(task)
-    
+
     # If there's only one group or no groups, return original order
     if len(groups) <= 1:
         return tasks
-    
+
     # Mix tasks using round-robin from each group
     mixed_tasks = []
     group_lists = list(groups.values())
     max_length = max(len(group) for group in group_lists)
-    
+
     for i in range(max_length):
         for group in group_lists:
             if i < len(group):
                 mixed_tasks.append(group[i])
-    
+
     # Add tasks without tags at the end
     mixed_tasks.extend(no_tag_tasks)
-    
-    logger.info(f"Task mixing: {len(groups)} groups found, mixed {len(mixed_tasks)} tasks")
+
+    logger.info(
+        f"Task mixing: {len(groups)} groups found, mixed {len(mixed_tasks)} tasks"
+    )
     for tag, group in groups.items():
         logger.info(f"  Group '{tag}': {len(group)} tasks")
-    
+
     return mixed_tasks
 
 
@@ -434,91 +500,107 @@ def mix_tasks_intelligently(tasks: List) -> List:
 async def schedule_tasks(request: SchedulerRequest):
     """
     Schedule existing tasks using the AI scheduler agent.
-    
+
     Args:
         request: SchedulerRequest with tasks and scheduling constraints
-    
+
     Returns:
         Schedule with sessions, total time, and metadata
     """
     try:
         from agents.scheduler.agent import SchedulerAgent, SchedulingContext
         from models.task import Task as SchedulerTask
-        
+
         # Convert Node.js tasks to scheduler Task objects
         scheduler_tasks = []
         for task in request.tasks:
             # Map priority to difficulty (0-1 scale)
-            priority = task.get('priority', 'medium')
-            if priority == 'low':
+            priority = task.get("priority", "medium")
+            if priority == "low":
                 difficulty = 0.3
-            elif priority == 'high':
+            elif priority == "high":
                 difficulty = 0.8
             else:
                 difficulty = 0.5
-            
+
             scheduler_task = SchedulerTask(
-                task_id=str(task.get('_id', task.get('id', ''))),
+                task_id=str(task.get("_id", task.get("id", ""))),
                 user_id=request.user_id,
-                title=task.get('title', 'Untitled Task'),
-                description=task.get('description', ''),
+                title=task.get("title", "Untitled Task"),
+                description=task.get("description", ""),
                 priority=priority,
                 difficulty=str(difficulty),
-                estimated_duration=task.get('estimatedTime', 30),
-                status=task.get('status', 'todo'),
-                tags=task.get('tags', []),
-                prerequisites=task.get('prerequisites', []),
+                estimated_duration=task.get("estimatedTime", 30),
+                status=task.get("status", "todo"),
+                tags=task.get("tags", []),
+                prerequisites=task.get("prerequisites", []),
             )
             scheduler_tasks.append(scheduler_task)
-        
+
         # Mix tasks from different subjects/courses intelligently
         mixed_tasks = mix_tasks_intelligently(scheduler_tasks)
-        
+
         # Create  scheduling context
         context = SchedulingContext(
             calendar_events=request.calendar_events,
             max_minutes_per_day=request.max_minutes_per_day,
             allow_late_night=request.allow_late_night,
         )
-        
+
         # Build schedule with mixed tasks
         scheduler = SchedulerAgent()
         study_plan = scheduler.build_schedule(
             tasks=mixed_tasks,
             context=context,
         )
-        
+
         # Convert sessions to frontend format
         sessions = []
         for session in study_plan.sessions:
-            sessions.append({
-                'taskId': session.task_id,
-                'title': next((t.title for t in scheduler_tasks if t.task_id == session.task_id), 'Unknown'),
-                'startTime': session.start_datetime.isoformat(),
-                'endTime': session.end_datetime.isoformat(),
-                'estimatedMinutes': int((session.end_datetime - session.start_datetime).total_seconds() / 60),
-                'slotScore': session.slot_score,
-            })
-        
+            sessions.append(
+                {
+                    "taskId": session.task_id,
+                    "title": next(
+                        (
+                            t.title
+                            for t in scheduler_tasks
+                            if t.task_id == session.task_id
+                        ),
+                        "Unknown",
+                    ),
+                    "startTime": session.start_datetime.isoformat(),
+                    "endTime": session.end_datetime.isoformat(),
+                    "estimatedMinutes": int(
+                        (session.end_datetime - session.start_datetime).total_seconds()
+                        / 60
+                    ),
+                    "slotScore": session.slot_score,
+                }
+            )
+
         return {
-            'success': True,
-            'schedule': {
-                'sessions': sessions,
-                'totalMinutes': study_plan.total_minutes,
-                'spanDays': study_plan.span_days,
-                'skippedTasks': study_plan.skipped_tasks,
-                'fallbackUsed': study_plan.fallback_used,
-            }
+            "success": True,
+            "schedule": {
+                "sessions": sessions,
+                "totalMinutes": study_plan.total_minutes,
+                "spanDays": study_plan.span_days,
+                "skippedTasks": study_plan.skipped_tasks,
+                "fallbackUsed": study_plan.fallback_used,
+            },
         }
-        
+
     except Exception as e:
         logger.error(f"Task scheduling failed: {e}")
         import traceback
+
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to schedule tasks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to schedule tasks: {str(e)}"
+        )
 
 
 # ==================== Coach Endpoints ====================
+
 
 @app.post("/api/ai/coach/decision")
 async def get_coach_decision(
@@ -527,11 +609,11 @@ async def get_coach_decision(
 ):
     """
     Get real-time coaching decision based on current context.
-    
+
     Args:
         request: CoachRequest with user ID and context
         x_trace_id: Optional request trace ID forwarded from the API gateway
-    
+
     Returns:
         CoachAction with decision and optional schedule changes
     """
@@ -548,23 +630,20 @@ async def get_coach_decision(
             live_fatigue_score=request.fatigue_score,
             live_fatigue_state=request.fatigue_state,
         )
-        
+
         # If coach suggests schedule changes, implement them
         if coach_action.schedule_changes:
             schedule_result = get_schedule_orchestrator().process_coach_action(
                 coach_action=coach_action,
                 user_id=request.user_id,
-                current_time=datetime.now()
+                current_time=datetime.now(),
             )
             return {
                 "coach_action": coach_action.model_dump(),
-                "schedule_update": schedule_result
+                "schedule_update": schedule_result,
             }
-        
-        return {
-            "coach_action": coach_action.model_dump(),
-            "schedule_update": None
-        }
+
+        return {"coach_action": coach_action.model_dump(), "schedule_update": None}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Coach decision failed: {str(e)}")
 
@@ -573,53 +652,63 @@ async def get_coach_decision(
 async def get_coach_history(user_id: str, limit: int = 20):
     """Get recent coaching action history for a user."""
     try:
-        from agents.coach.services.coach_history_repository import CoachHistoryRepository
+        from agents.coach.services.coach_history_repository import (
+            CoachHistoryRepository,
+        )
+
         repo = CoachHistoryRepository()
         history = repo.get_recent_actions(user_id, limit=limit)
         return {"history": history, "count": len(history)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch history: {str(e)}"
+        )
 
 
 # ==================== Signal Processing Endpoints ====================
+
 
 @app.get("/api/ai/signals/current/{user_id}")
 async def get_current_signals(user_id: str):
     """
     Get the current signal snapshot (focus and fatigue) for a user.
-    
+
     Args:
         user_id: User identifier
-    
+
     Returns:
         Latest signal snapshot with focus and fatigue data
     """
     try:
         signal_service = get_signal_service()
         if signal_service is None:
-            raise HTTPException(status_code=503, detail="Signal processing service is disabled")
-        
+            raise HTTPException(
+                status_code=503, detail="Signal processing service is disabled"
+            )
+
         snapshot = signal_service.get_latest_snapshot(user_id)
         if snapshot is None:
             # Generate a new snapshot if none exists
             snapshot = signal_service.get_current_signal_snapshot(user_id)
-        
+
         return {
             "user_id": user_id,
             "timestamp": snapshot.timestamp,
             "focus": {
                 "state": snapshot.focus_state,
                 "score": snapshot.focus_score,
-                "confidence": snapshot.focus_confidence
+                "confidence": snapshot.focus_confidence,
             },
             "fatigue": {
                 "state": snapshot.fatigue_state,
                 "score": snapshot.fatigue_score,
-                "confidence": snapshot.fatigue_confidence
-            }
+                "confidence": snapshot.fatigue_confidence,
+            },
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch signals: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch signals: {str(e)}"
+        )
 
 
 @app.get("/api/ai/signals/history/{user_id}")
@@ -632,66 +721,70 @@ async def get_signal_history(user_id: str, limit: int = 50):
                 {
                     "timestamp": s.timestamp,
                     "focus": {"state": s.focus_state, "score": s.focus_score},
-                    "fatigue": {"state": s.fatigue_state, "score": s.fatigue_score}
+                    "fatigue": {"state": s.fatigue_state, "score": s.fatigue_score},
                 }
                 for s in snapshots
             ]
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch history: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch history: {str(e)}"
+        )
 
 
 @app.post("/api/ai/signals/process")
 async def process_signals(request: SignalProcessingRequest):
     """
     Manually trigger signal processing for a user.
-    
+
     This endpoint would typically be called by a frontend during an active study session.
     """
     try:
         snapshot = get_signal_service().get_current_signal_snapshot(
             user_id=request.user_id,
             video_features=None,  # Frontend should send video data
-            video_frame=None
+            video_frame=None,
         )
-        
+
         return {
             "status": "success",
             "snapshot": {
                 "focus": {"state": snapshot.focus_state, "score": snapshot.focus_score},
-                "fatigue": {"state": snapshot.fatigue_state, "score": snapshot.fatigue_score}
-            }
+                "fatigue": {
+                    "state": snapshot.fatigue_state,
+                    "score": snapshot.fatigue_score,
+                },
+            },
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Signal processing failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Signal processing failed: {str(e)}"
+        )
 
 
 @app.post("/api/ai/signals/analyze-frame")
-async def analyze_frame(
-    user_id: str = Form(...),
-    frame: UploadFile = File(...)
-):
+async def analyze_frame(user_id: str = Form(...), frame: UploadFile = File(...)):
     """
     Analyze a video frame for focus and fatigue detection.
-    
+
     Args:
         user_id: User ID
         frame: Video frame image file (JPEG/PNG)
-    
+
     Returns:
         Combined focus and fatigue analysis results
     """
     try:
         # Read frame data
         frame_data = await frame.read()
-        
+
         # Run both detectors
         focus_detector = get_focus_detector()
         fatigue_detector = get_fatigue_detector()
-        
+
         focus_result = focus_detector.analyze_frame(frame_data)
         fatigue_result = fatigue_detector.analyze_frame(frame_data)
-        
+
         # Combine results
         analysis = {
             "timestamp": datetime.utcnow().isoformat(),
@@ -699,21 +792,21 @@ async def analyze_frame(
             "focus": {
                 "score": focus_result.get("focus_score", 0),
                 "state": focus_result.get("focus_state", "unknown"),
-                "confidence": focus_result.get("confidence", 0)
+                "confidence": focus_result.get("confidence", 0),
             },
             "fatigue": {
                 "score": fatigue_result.get("fatigue_score", 0),
                 "state": fatigue_result.get("fatigue_state", "unknown"),
                 "indicators": fatigue_result.get("indicators", {}),
-                "confidence": fatigue_result.get("confidence", 0)
-            }
+                "confidence": fatigue_result.get("confidence", 0),
+            },
         }
-        
+
         # Save to MongoDB signals collection
         signals_collection.insert_one(analysis)
-        
+
         return analysis
-        
+
     except Exception as e:
         logger.warning("frame_analysis_failed", extra={"error": str(e)})
         raise HTTPException(status_code=500, detail=f"Frame analysis failed: {str(e)}")
@@ -723,11 +816,11 @@ async def analyze_frame(
 async def get_latest_signals(user_id: str, limit: int = 10):
     """
     Get the most recent signal analysis results for a user.
-    
+
     Args:
         user_id: User ID
         limit: Number of results to return
-    
+
     Returns:
         List of recent signal analyses
     """
@@ -737,15 +830,17 @@ async def get_latest_signals(user_id: str, limit: int = 10):
             .sort("timestamp", -1)
             .limit(limit)
         )
-        
+
         # Convert ObjectId to string
         for signal in signals:
-            signal['_id'] = str(signal['_id'])
-        
+            signal["_id"] = str(signal["_id"])
+
         return {"signals": signals}
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch signals: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch signals: {str(e)}"
+        )
 
 
 # ==================== New planner / scheduler / signal endpoints ====================
@@ -766,6 +861,7 @@ async def record_task_completion(request: RecordCompletionRequest):
     """
     try:
         from agents.planner.memory.pacing_store import PacingStore
+
         store = PacingStore()
         store.record_task_completion(
             user_id=request.user_id,
@@ -781,6 +877,7 @@ async def record_task_completion(request: RecordCompletionRequest):
 
 
 # ── Review / Spaced Repetition Endpoints ──────────────────────────────
+
 
 class ScheduleReviewRequest(BaseModel):
     user_id: str
@@ -798,6 +895,7 @@ async def schedule_review(request: ScheduleReviewRequest):
     """
     try:
         from agents.planner.memory.review_inserter import ReviewInserter
+
         inserter = ReviewInserter()
         result = inserter.schedule_review(
             user_id=request.user_id,
@@ -837,6 +935,7 @@ async def record_review_result(request: RecordReviewResultRequest):
     """
     try:
         from agents.planner.memory.review_inserter import ReviewInserter
+
         inserter = ReviewInserter()
         result = inserter.record_review_result(
             user_id=request.user_id,
@@ -859,6 +958,7 @@ async def get_pending_reviews(user_id: str, limit: int = 20):
     """
     try:
         from agents.planner.memory.review_inserter import ReviewInserter
+
         inserter = ReviewInserter()
         reviews = inserter.get_pending_reviews(user_id, limit=limit)
         return {"status": "ok", "reviews": reviews, "count": len(reviews)}
@@ -873,6 +973,7 @@ async def get_review_stats(user_id: str):
     """
     try:
         from agents.planner.memory.review_inserter import ReviewInserter
+
         inserter = ReviewInserter()
         stats = inserter.get_review_stats(user_id)
         return {"status": "ok", **stats}
@@ -896,7 +997,11 @@ async def reschedule(request: RescheduleRequest):
         study_plan = db_svc.get_latest_study_plan(request.user_id)
         if study_plan is None:
             raise HTTPException(status_code=404, detail="No study plan found")
-        return {"status": "ok", "message": "Reschedule queued", "user_id": request.user_id}
+        return {
+            "status": "ok",
+            "message": "Reschedule queued",
+            "user_id": request.user_id,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -917,6 +1022,7 @@ async def calibrate_signals(request: CalibrateSignalsRequest):
     """
     try:
         from services.signal_processing_service.smoothing import get_ema_state
+
         ema = get_ema_state()
         ema.reset(request.user_id)
         # Seed with baseline
@@ -928,6 +1034,7 @@ async def calibrate_signals(request: CalibrateSignalsRequest):
 
 # ==================== Search Agent ====================
 
+
 class SearchAskRequest(BaseModel):
     question: str
     user_id: Optional[str] = ""
@@ -935,12 +1042,16 @@ class SearchAskRequest(BaseModel):
 
 
 @app.post("/api/ai/search/ask")
-async def search_ask(req: SearchAskRequest, x_trace_id: Optional[str] = Header(None, alias="x-trace-id")):
+async def search_ask(
+    req: SearchAskRequest, x_trace_id: Optional[str] = Header(None, alias="x-trace-id")
+):
     """Web-search a question using Apify + extract text + answer via LM Studio (Qwen)."""
     import uuid
+
     trace_id = x_trace_id or str(uuid.uuid4())
     try:
         from agents.search.agent import process_question
+
         result = process_question(
             req.question,
             user_id=req.user_id,
@@ -953,7 +1064,9 @@ async def search_ask(req: SearchAskRequest, x_trace_id: Optional[str] = Header(N
     except HTTPException:
         raise
     except Exception as exc:
-        logger.warning("search_ask_error", extra={"error": str(exc), "trace_id": trace_id})
+        logger.warning(
+            "search_ask_error", extra={"error": str(exc), "trace_id": trace_id}
+        )
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -962,6 +1075,7 @@ async def search_history(user_id: str, limit: int = 20):
     """Return the last N search exchanges for a user."""
     try:
         from agents.search.services.search_repository import SearchRepository
+
         repo = SearchRepository()
         items = repo.get_history(user_id, limit=limit)
         return {"user_id": user_id, "history": items}
@@ -975,6 +1089,7 @@ async def search_history_clear(user_id: str):
     """Clear all search history for a user."""
     try:
         from agents.search.services.search_repository import SearchRepository
+
         repo = SearchRepository()
         repo.clear_history(user_id)
         return {"success": True}
@@ -986,12 +1101,12 @@ async def search_history_clear(user_id: str):
 # ==================== Test Runner ====================
 
 _TEST_SUITES: Dict[str, List[str]] = {
-    "coach":     ["agents/coach/tests/"],
-    "planner":   ["agents/planner/tests/"],
+    "coach": ["agents/coach/tests/"],
+    "planner": ["agents/planner/tests/"],
     "scheduler": ["agents/scheduler/tests/"],
     "ingestion": ["agents/course_ingestion/tests/test_embedder.py"],
-    "signals":   ["services/signal_processing_service/tests/"],
-    "search":    ["agents/search/tests/"],
+    "signals": ["services/signal_processing_service/tests/"],
+    "search": ["agents/search/tests/"],
     "all": [
         "agents/coach/tests/",
         "agents/planner/tests/",
@@ -1127,15 +1242,20 @@ async def run_tests(req: TestRunRequest):
     root = str(Path(__file__).resolve().parents[2])
 
     cmd = [
-        sys.executable, "-m", "pytest",
+        sys.executable,
+        "-m",
+        "pytest",
         *paths,
         "-v",
         "--tb=short",
-        "-W", "ignore::DeprecationWarning",
-        "-W", "ignore::pytest.PytestUnknownMarkWarning",
+        "-W",
+        "ignore::DeprecationWarning",
+        "-W",
+        "ignore::pytest.PytestUnknownMarkWarning",
         "--json-report",
         "--json-report-file=-",
-        "-p", "no:cacheprovider",
+        "-p",
+        "no:cacheprovider",
     ]
     try:
         proc = subprocess.run(
@@ -1160,30 +1280,38 @@ async def run_tests(req: TestRunRequest):
                 report = json.loads(stdout[json_start:])
                 s = report.get("summary", {})
                 summary = {
-                    "passed":   s.get("passed", 0),
-                    "failed":   s.get("failed", 0),
-                    "skipped":  s.get("skipped", 0),
-                    "error":    s.get("error", 0),
+                    "passed": s.get("passed", 0),
+                    "failed": s.get("failed", 0),
+                    "skipped": s.get("skipped", 0),
+                    "error": s.get("error", 0),
                     "duration": report.get("duration", 0),
                 }
                 # Strip the JSON blob from the displayed output
-                output = stdout[:json_start].strip() + ("\n" + stderr if stderr.strip() else "")
+                output = stdout[:json_start].strip() + (
+                    "\n" + stderr if stderr.strip() else ""
+                )
         except Exception:
             pass
 
         return {
-            "suite":     suite,
+            "suite": suite,
             "exit_code": proc.returncode,
-            "output":    output,
-            "summary":   summary,
+            "output": output,
+            "summary": summary,
         }
     except subprocess.TimeoutExpired:
-        return {"suite": suite, "exit_code": -1, "output": "Test run timed out (>180 s)", "summary": {}}
+        return {
+            "suite": suite,
+            "exit_code": -1,
+            "output": "Test run timed out (>180 s)",
+            "summary": {},
+        }
     except Exception as exc:
         return {"suite": suite, "exit_code": -1, "output": str(exc), "summary": {}}
 
 
 # ==================== Health Check ====================
+
 
 @app.get("/health")
 async def health_check():
@@ -1194,11 +1322,12 @@ async def health_check():
             "planner": get_planner_agent() is not None,
             "coach": get_ai_orchestrator() is not None,
             "signals": get_signal_service() is not None,
-            "scheduler": get_schedule_orchestrator() is not None
-        }
+            "scheduler": get_schedule_orchestrator() is not None,
+        },
     }
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

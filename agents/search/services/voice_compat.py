@@ -1,5 +1,5 @@
-"""Backward compatibility small helpers mirroring the old `voice.py`.
-"""
+"""Backward compatibility small helpers mirroring the old `voice.py`."""
+
 from .voice_service import get_voice_service, speak_answer
 
 

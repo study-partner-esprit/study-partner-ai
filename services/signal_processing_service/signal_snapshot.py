@@ -45,7 +45,7 @@ class SignalSnapshot(BaseModel):
     focus_trend: Optional[float] = Field(
         default=None,
         description="Linear trend slope of focus_score over the recent window. "
-                    "Negative = declining focus.",
+        "Negative = declining focus.",
     )
 
     class Config:
@@ -62,4 +62,3 @@ class SignalSnapshot(BaseModel):
                 "focus_trend": -0.12,
             }
         }
-

@@ -4,13 +4,16 @@ import cv2
 from tensorflow.keras.models import load_model
 
 # Force CPU usage to avoid GPU issues
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 
 def test_focus_model():
     """Test the focus detection model with a sample image"""
 
     # Load the model
-    model_path = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'models', 'focus_model.h5')
+    model_path = os.path.join(
+        os.path.dirname(__file__), "..", "outputs", "models", "focus_model.h5"
+    )
     print(f"Loading model from: {model_path}")
 
     try:
@@ -25,7 +28,9 @@ def test_focus_model():
     model.summary()
 
     # Test with a sample image
-    sample_image_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'raw', 'Engaged', 'engaged', '0001.jpg')
+    sample_image_path = os.path.join(
+        os.path.dirname(__file__), "..", "data", "raw", "Engaged", "engaged", "0001.jpg"
+    )
     print(f"\nTesting with sample image: {sample_image_path}")
 
     if not os.path.exists(sample_image_path):
@@ -72,6 +77,7 @@ def test_focus_model():
         print(".4f")
 
     print("\n✓ Model test completed successfully!")
+
 
 if __name__ == "__main__":
     test_focus_model()

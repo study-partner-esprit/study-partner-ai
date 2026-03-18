@@ -8,6 +8,7 @@ from typing import Optional
 from datetime import datetime
 
 from services.signal_processing_service.signal_snapshot import SignalSnapshot
+
 # Lazy imports to avoid startup crashes
 # from services.signal_processing_service.focus_adapter import FocusAdapter
 # from services.signal_processing_service.fatigue_adapter import FatigueAdapter
@@ -29,11 +30,13 @@ class SignalProcessingService:
         self.focus_adapter = None
         self.fatigue_adapter = None
         self._initialized = False
-        
+
         try:
             from services.signal_processing_service.focus_adapter import FocusAdapter
-            from services.signal_processing_service.fatigue_adapter import FatigueAdapter
-            
+            from services.signal_processing_service.fatigue_adapter import (
+                FatigueAdapter,
+            )
+
             self.focus_adapter = FocusAdapter()
             self.fatigue_adapter = FatigueAdapter()
             self._initialized = True
@@ -46,7 +49,7 @@ class SignalProcessingService:
 
     def is_ready(self) -> bool:
         """Check if the signal processing service is ready to process signals."""
-        return getattr(self, '_initialized', False)
+        return getattr(self, "_initialized", False)
 
     def get_current_signal_snapshot(
         self,
@@ -79,7 +82,7 @@ class SignalProcessingService:
                 fatigue_score=0.5,
                 fatigue_confidence=0.0,
                 overall_state="unknown",
-                dnd=False
+                dnd=False,
             )
 
         # Collect focus signal

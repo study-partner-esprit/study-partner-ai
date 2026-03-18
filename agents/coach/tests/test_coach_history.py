@@ -10,12 +10,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.coach.models.schemas import CoachAction, CoachInput, FocusState, FatigueState
-
+from agents.coach.models.schemas import (
+    CoachAction,
+    CoachInput,
+    FocusState,
+    FatigueState,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_coach_input(**overrides):
     defaults = dict(
@@ -43,11 +48,15 @@ def _make_action(**overrides):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestCoachHistoryRepository:
 
     def _make_repo(self, collection):
         """Return a repo instance with its MongoDB collection mocked (bypasses __init__)."""
-        from agents.coach.services.coach_history_repository import CoachHistoryRepository
+        from agents.coach.services.coach_history_repository import (
+            CoachHistoryRepository,
+        )
+
         repo = CoachHistoryRepository.__new__(CoachHistoryRepository)
         repo._db = {"coach_actions": collection}
         return repo
@@ -68,7 +77,10 @@ class TestCoachHistoryRepository:
         assert doc["trace_id"] == "t-123"
 
     def test_save_action_no_db_silently_skips(self):
-        from agents.coach.services.coach_history_repository import CoachHistoryRepository
+        from agents.coach.services.coach_history_repository import (
+            CoachHistoryRepository,
+        )
+
         repo = CoachHistoryRepository.__new__(CoachHistoryRepository)
         repo._db = None
 
@@ -78,9 +90,14 @@ class TestCoachHistoryRepository:
     def test_get_recent_actions_returns_list(self):
         col = MagicMock()
         expected = [
-            {"ts": datetime.now(tz=timezone.utc), "action_type": "encourage",
-             "message": "Great!", "focus_state": "Focused",
-             "fatigue_state": "Alert", "affective_state": "confident"},
+            {
+                "ts": datetime.now(tz=timezone.utc),
+                "action_type": "encourage",
+                "message": "Great!",
+                "focus_state": "Focused",
+                "fatigue_state": "Alert",
+                "affective_state": "confident",
+            },
         ]
         col.find.return_value.sort.return_value.limit.return_value = expected
 
@@ -102,7 +119,10 @@ class TestCoachHistoryRepository:
         )
 
     def test_get_recent_actions_empty_user_returns_empty(self):
-        from agents.coach.services.coach_history_repository import CoachHistoryRepository
+        from agents.coach.services.coach_history_repository import (
+            CoachHistoryRepository,
+        )
+
         repo = CoachHistoryRepository.__new__(CoachHistoryRepository)
         repo._db = MagicMock()
 
@@ -110,7 +130,10 @@ class TestCoachHistoryRepository:
         assert result == []
 
     def test_get_recent_actions_no_db_returns_empty(self):
-        from agents.coach.services.coach_history_repository import CoachHistoryRepository
+        from agents.coach.services.coach_history_repository import (
+            CoachHistoryRepository,
+        )
+
         repo = CoachHistoryRepository.__new__(CoachHistoryRepository)
         repo._db = None
 

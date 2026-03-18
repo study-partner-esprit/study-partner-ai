@@ -11,7 +11,13 @@ from typing import Optional
 from datetime import datetime
 
 from agents.coach.agent import run_coach
-from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask, FocusState, FatigueState
+from agents.coach.models.schemas import (
+    CoachInput,
+    CoachAction,
+    ScheduledTask,
+    FocusState,
+    FatigueState,
+)
 from agents.coach.services.planner_repository import PlannerRepository
 from services.signal_processing_service.service import SignalProcessingService
 from services.signal_processing_service.signal_snapshot import SignalSnapshot
@@ -23,21 +29,21 @@ logger = get_logger(__name__)
 class AIOrchestrator:
     """
     Orchestrates the execution of the Coach agent with full context.
-    
+
     This service:
     1. Fetches scheduled tasks and ML signals in parallel (ThreadPoolExecutor)
     2. Constructs the CoachInput with all necessary data
     3. Executes the Coach agent (with trace_id propagation)
     4. Returns the Coach's decision/action
     """
-    
+
     def __init__(self):
         """Initialize the orchestrator with required services."""
         self.signal_service = SignalProcessingService()
         self.planner_repo = PlannerRepository()
-    
+
     def run_coach(
-        self, 
+        self,
         user_id: str,
         current_time: Optional[datetime] = None,
         ignored_count: int = 0,
@@ -50,14 +56,14 @@ class AIOrchestrator:
     ) -> CoachAction:
         """
         Execute the Coach agent with full user context.
-        
+
         Args:
             user_id:        The user's unique identifier.
             current_time:   The current time (defaults to now).
             ignored_count:  Number of times user has ignored recent nudges.
             do_not_disturb: Whether user has enabled DND mode.
             trace_id:       Optional request trace ID; generated if not provided.
-        
+
         Returns:
             A CoachAction containing the coach's decision.
         """
@@ -122,7 +128,7 @@ class AIOrchestrator:
             live_fatigue_score=live_fatigue_score,
             live_fatigue_state=live_fatigue_state,
         )
-        
+
         # Step 4: Execute Coach agent (history lookup + action persistence inside)
         coach_action = run_coach(
             coach_input,
@@ -139,11 +145,11 @@ class AIOrchestrator:
             },
         )
         return coach_action
-    
+
     def _fetch_scheduled_tasks(self) -> list[ScheduledTask]:
         """
         Fetch scheduled tasks for the user.
-        
+
         Returns:
             List of scheduled tasks (may be empty)
         """
@@ -151,21 +157,19 @@ class AIOrchestrator:
             tasks = self.planner_repo.get_scheduled_tasks()
             return tasks if tasks else []
         except Exception as e:
-            logger.warning(
-                "orchestrator_fetch_tasks_error", extra={"error": str(e)}
-            )
+            logger.warning("orchestrator_fetch_tasks_error", extra={"error": str(e)})
             return []
-    
+
     def _fetch_signal_snapshot(self, user_id: str) -> Optional[SignalSnapshot]:
         """
         Fetch the latest signal snapshot for the user.
-        
+
         Returns:
             SignalSnapshot if available, None otherwise.
         """
         try:
             snapshot = self.signal_service.get_latest_snapshot(user_id)
-            
+
             if snapshot is None:
                 logger.info(
                     "orchestrator_generate_new_snapshot",
@@ -180,7 +184,7 @@ class AIOrchestrator:
                         extra={"user_id": user_id, "age_seconds": int(age_seconds)},
                     )
                     snapshot = self.signal_service.get_current_signal_snapshot(user_id)
-            
+
             return snapshot
         except Exception as e:
             logger.warning(
@@ -188,7 +192,7 @@ class AIOrchestrator:
                 extra={"user_id": user_id, "error": str(e)},
             )
             return None
-    
+
     def _build_coach_input(
         self,
         user_id: str,
@@ -205,7 +209,7 @@ class AIOrchestrator:
         """
         Build the CoachInput from all available data.
         Live signal params take precedence over DB snapshot.
-        
+
         Returns:
             A fully populated CoachInput.
         """
@@ -238,7 +242,7 @@ class AIOrchestrator:
 
         affective_state = "engaged"  # derive from signals in future
         is_late = self._check_if_late(scheduled_tasks, current_time)
-        
+
         return CoachInput(
             scheduled_tasks=scheduled_tasks,
             current_time=current_time,
@@ -250,10 +254,10 @@ class AIOrchestrator:
             is_late=is_late,
             signals=signal_snapshot,
         )
-    
+
     def _check_if_late(
-        self, 
-        scheduled_tasks: list[ScheduledTask], 
+        self,
+        scheduled_tasks: list[ScheduledTask],
         current_time: datetime,
     ) -> bool:
         """Return True if the user is late for any scheduled task."""

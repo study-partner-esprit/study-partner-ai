@@ -6,7 +6,9 @@ from tensorflow.keras.models import load_model
 from collections import deque, Counter
 
 # --- Load the trained model ---
-model_path = os.path.join(os.path.dirname(__file__), '..', 'outputs', 'models', 'focus_model.h5')
+model_path = os.path.join(
+    os.path.dirname(__file__), "..", "outputs", "models", "focus_model.h5"
+)
 model = load_model(model_path)
 
 # Mapping indices to labels
@@ -78,14 +80,30 @@ while True:
     focus_score_percent = (np.array(focus_scores) == 0).mean() * 100
 
     # Display on frame
-    cv2.putText(frame, f"Focus: {pred_label}", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 2)
-    cv2.putText(frame, f"Focus Score: {focus_score_percent:.1f}%", (10,70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
+    cv2.putText(
+        frame,
+        f"Focus: {pred_label}",
+        (10, 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,
+        (0, 255, 0),
+        2,
+    )
+    cv2.putText(
+        frame,
+        f"Focus Score: {focus_score_percent:.1f}%",
+        (10, 70),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,
+        (0, 255, 255),
+        2,
+    )
 
     # Show frame
-    cv2.imshow('Focus Monitor', frame)
+    cv2.imshow("Focus Monitor", frame)
 
     # Quit on 'q'
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
 cap.release()

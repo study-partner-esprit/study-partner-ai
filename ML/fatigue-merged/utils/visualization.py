@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 
+
 def create_fatigue_gauge(frame, fatigue_score, position=(20, 100), size=(200, 30)):
     """
     Draw a horizontal gauge showing fatigue level.
@@ -35,8 +36,16 @@ def create_fatigue_gauge(frame, fatigue_score, position=(20, 100), size=(200, 30
 
     # Percentage text
     text = f"{int(fatigue_score * 100)}%"
-    cv2.putText(frame, text, (x + width + 10, y + 20),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    cv2.putText(
+        frame,
+        text,
+        (x + width + 10, y + 20),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 255, 255),
+        2,
+    )
+
 
 def draw_fatigue_meter(frame, fatigue_score, position=(20, 150)):
     """
@@ -71,8 +80,10 @@ def draw_fatigue_meter(frame, fatigue_score, position=(20, 150)):
     text_x = center[0] - text_size[0] // 2
     text_y = center[1] + text_size[1] // 2
 
-    cv2.putText(frame, text, (text_x, text_y),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(
+        frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
+    )
+
 
 def create_alert_message(frame, message, blink=False, blink_state=[0]):
     """
@@ -98,19 +109,31 @@ def create_alert_message(frame, message, blink=False, blink_state=[0]):
     box_x = (w - box_width) // 2
     box_y = h - 150
 
-    cv2.rectangle(frame, (box_x, box_y), 
-                 (box_x + box_width, box_y + box_height),
-                 (0, 0, 255), -1)
-    cv2.rectangle(frame, (box_x, box_y),
-                 (box_x + box_width, box_y + box_height),
-                 (255, 255, 255), 3)
+    cv2.rectangle(
+        frame, (box_x, box_y), (box_x + box_width, box_y + box_height), (0, 0, 255), -1
+    )
+    cv2.rectangle(
+        frame,
+        (box_x, box_y),
+        (box_x + box_width, box_y + box_height),
+        (255, 255, 255),
+        3,
+    )
 
     # Alert text
     text_x = box_x + 20
     text_y = box_y + text_size[1] + 15
 
-    cv2.putText(frame, message, (text_x, text_y),
-               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+    cv2.putText(
+        frame,
+        message,
+        (text_x, text_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.5,
+        (255, 255, 255),
+        3,
+    )
+
 
 def draw_eye_status(frame, left_ear, right_ear, position=(20, 250)):
     """
@@ -126,12 +149,20 @@ def draw_eye_status(frame, left_ear, right_ear, position=(20, 250)):
     lines = [
         f"Left EAR: {left_ear:.3f}",
         f"Right EAR: {right_ear:.3f}",
-        f"Avg EAR: {(left_ear + right_ear) / 2:.3f}"
+        f"Avg EAR: {(left_ear + right_ear) / 2:.3f}",
     ]
 
     for i, line in enumerate(lines):
-        cv2.putText(frame, line, (x, y + i * 25),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(
+            frame,
+            line,
+            (x, y + i * 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+        )
+
 
 def create_dashboard(frame, stats):
     """
@@ -155,8 +186,15 @@ def create_dashboard(frame, stats):
     cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
 
     # Title
-    cv2.putText(frame, "FATIGUE MONITOR", (20, 35),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    cv2.putText(
+        frame,
+        "FATIGUE MONITOR",
+        (20, 35),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 255),
+        2,
+    )
 
     # Stats
     y_offset = 70
@@ -166,13 +204,21 @@ def create_dashboard(frame, stats):
         f"Level: {stats.get('fatigue_level', 'Unknown')}",
         f"Blinks/min: {stats.get('blink_rate', 0)}",
         f"Yawns: {stats.get('yawns', 0)}",
-        f"Trend: {stats.get('trend', 'stable')}"
+        f"Trend: {stats.get('trend', 'stable')}",
     ]
 
     for line in stats_lines:
-        cv2.putText(frame, line, (20, y_offset),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(
+            frame,
+            line,
+            (20, y_offset),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+        )
         y_offset += 20
+
 
 def show_calibration_progress(frame, progress, total):
     """
@@ -191,20 +237,28 @@ def show_calibration_progress(frame, progress, total):
     bar_y = h // 2
 
     # Background
-    cv2.rectangle(frame, (bar_x, bar_y),
-                 (bar_x + bar_width, bar_y + bar_height),
-                 (100, 100, 100), -1)
+    cv2.rectangle(
+        frame,
+        (bar_x, bar_y),
+        (bar_x + bar_width, bar_y + bar_height),
+        (100, 100, 100),
+        -1,
+    )
 
     # Fill
     fill_width = int(bar_width * (progress / total))
-    cv2.rectangle(frame, (bar_x, bar_y),
-                 (bar_x + fill_width, bar_y + bar_height),
-                 (0, 255, 0), -1)
+    cv2.rectangle(
+        frame, (bar_x, bar_y), (bar_x + fill_width, bar_y + bar_height), (0, 255, 0), -1
+    )
 
     # Border
-    cv2.rectangle(frame, (bar_x, bar_y),
-                 (bar_x + bar_width, bar_y + bar_height),
-                 (255, 255, 255), 2)
+    cv2.rectangle(
+        frame,
+        (bar_x, bar_y),
+        (bar_x + bar_width, bar_y + bar_height),
+        (255, 255, 255),
+        2,
+    )
 
     # Text
     text = f"Calibrating: {progress}/{total}"
@@ -212,5 +266,6 @@ def show_calibration_progress(frame, progress, total):
     text_x = (w - text_size[0]) // 2
     text_y = bar_y - 20
 
-    cv2.putText(frame, text, (text_x, text_y),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    cv2.putText(
+        frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
+    )

@@ -41,6 +41,7 @@ class CoachHistoryRepository:
         self._db = None
         try:
             from services.database import get_db
+
             self._db = get_db()
         except Exception as exc:
             logger.warning("coach_history_no_db", extra={"error": str(exc)})

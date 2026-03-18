@@ -50,7 +50,10 @@ class PlannerInput(BaseModel):
     Contains all information needed to generate a personalized study plan.
     """
 
-    goal: Optional[str] = Field(default=None, description="Main learning goal (optional if course_knowledge provided)")
+    goal: Optional[str] = Field(
+        default=None,
+        description="Main learning goal (optional if course_knowledge provided)",
+    )
     deadline_iso: str = Field(..., description="Deadline in ISO 8601 format")
     available_minutes: int = Field(
         ..., gt=0, description="Total available time in minutes"

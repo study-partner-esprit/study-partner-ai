@@ -8,10 +8,10 @@ Run with:
 import numpy as np
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Minimal stubs so we don't need the real models at test time
 # ---------------------------------------------------------------------------
+
 
 class _FakeVectorStore:
     """Minimal in-memory vector store stub."""
@@ -44,10 +44,12 @@ class _FakeEmbedModel:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestContentRetrieverPrecomputed:
 
     def _make_retriever(self):
         from agents.planner.rag.retriever import ContentRetriever
+
         vs = _FakeVectorStore()
         em = _FakeEmbedModel()
         return ContentRetriever(vs, em), vs

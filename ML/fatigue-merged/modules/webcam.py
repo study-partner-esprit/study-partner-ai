@@ -5,6 +5,7 @@ import logging
 # Suppress OpenCV warnings
 logging.getLogger("libGL").setLevel(logging.ERROR)
 
+
 class Webcam:
     """
     Enhanced webcam handler combining robust camera management
@@ -34,7 +35,7 @@ class Webcam:
 
         # Set camera properties for reliability
         # Force MJPG format (more reliable on Linux, avoids freezes)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
@@ -105,7 +106,7 @@ class Webcam:
             self.cap = cv2.VideoCapture(self.camera_id, backend)
             if self.cap.isOpened():
                 # Reconfigure camera
-                self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                 self.cap.set(cv2.CAP_PROP_FPS, self.fps)
@@ -158,7 +159,7 @@ class Webcam:
         print(f"✅ Calibration complete. Avg frame time: {avg_time:.4f}s")
         return avg_time
 
-    def show_loop(self, window_name="Camera Feed", exit_key='q'):
+    def show_loop(self, window_name="Camera Feed", exit_key="q"):
         """
         Continuously show the camera feed until exit key is pressed.
         """
@@ -194,5 +195,5 @@ class Webcam:
             "frame_count": self.frame_count,
             "recovery_attempts": self.recovery_attempts,
             "last_frame_time": self.last_successful_frame,
-            "is_healthy": self.is_healthy()
+            "is_healthy": self.is_healthy(),
         }

@@ -25,10 +25,10 @@ def embed_chunks(chunks: List[str]) -> List[List[float]]:
     Returns:
         List of float lists (serialisable for MongoDB).
     """
-    if not chunks:          # safe: chunks is a plain Python list
+    if not chunks:  # safe: chunks is a plain Python list
         return []
-    vecs = get_embedder().encode(chunks)   # returns np.ndarray shape (N, 384)
-    if vecs.size == 0:      # safe numpy check — never uses bool(ndarray)
+    vecs = get_embedder().encode(chunks)  # returns np.ndarray shape (N, 384)
+    if vecs.size == 0:  # safe numpy check — never uses bool(ndarray)
         return []
     return vecs.tolist()
 
@@ -72,5 +72,7 @@ def embed_all_subtopics(subtopics: List[dict]) -> List[dict]:
         end = offsets[i + 1]
         st["chunk_embeddings"] = all_vecs[start:end]
 
-    logger.info("embedding_subtopic_chunks_done", extra={"total_chunks": len(all_chunks)})
+    logger.info(
+        "embedding_subtopic_chunks_done", extra={"total_chunks": len(all_chunks)}
+    )
     return subtopics

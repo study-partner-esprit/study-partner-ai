@@ -236,9 +236,9 @@ class FatigueAdapter:
                 brow_down_left = 0.0
                 brow_down_right = 0.0
                 for bs in blendshapes:
-                    if bs.category_name == 'browDownLeft':
+                    if bs.category_name == "browDownLeft":
                         brow_down_left = bs.score
-                    elif bs.category_name == 'browDownRight':
+                    elif bs.category_name == "browDownRight":
                         brow_down_right = bs.score
                 # Lower brow_dist = more furrowed = more fatigued
                 # Matches FatigueRules expectation: brow_dist < threshold → fatigue

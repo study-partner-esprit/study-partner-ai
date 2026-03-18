@@ -103,10 +103,15 @@ class TestFullStudyWorkflow:
 
             # Verify datetime objects are valid (they should be datetime objects, not strings)
             from datetime import datetime
+
             start_dt = session["start_datetime"]
             end_dt = session["end_datetime"]
-            assert isinstance(start_dt, datetime), f"start_datetime should be datetime object, got {type(start_dt)}"
-            assert isinstance(end_dt, datetime), f"end_datetime should be datetime object, got {type(end_dt)}"
+            assert isinstance(
+                start_dt, datetime
+            ), f"start_datetime should be datetime object, got {type(start_dt)}"
+            assert isinstance(
+                end_dt, datetime
+            ), f"end_datetime should be datetime object, got {type(end_dt)}"
             assert start_dt < end_dt, "Session end time should be after start time"
 
         print("✅ Complete workflow test passed!")

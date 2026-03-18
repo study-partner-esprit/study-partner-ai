@@ -22,17 +22,45 @@ logger = get_logger(__name__)
 
 # Words that indicate a vague goal
 VAGUE_INDICATORS = [
-    "stuff", "things", "something", "anything", "whatever",
-    "etc", "and so on", "and more", "maybe", "kind of",
-    "sort of", "a bit", "some", "a little", "general",
+    "stuff",
+    "things",
+    "something",
+    "anything",
+    "whatever",
+    "etc",
+    "and so on",
+    "and more",
+    "maybe",
+    "kind of",
+    "sort of",
+    "a bit",
+    "some",
+    "a little",
+    "general",
 ]
 
 # Words that indicate a well-defined goal
 SPECIFIC_INDICATORS = [
-    "chapter", "module", "topic", "concept", "theorem",
-    "algorithm", "function", "class", "method", "section",
-    "exercise", "problem", "quiz", "exam", "test",
-    "lecture", "lab", "project", "assignment", "homework",
+    "chapter",
+    "module",
+    "topic",
+    "concept",
+    "theorem",
+    "algorithm",
+    "function",
+    "class",
+    "method",
+    "section",
+    "exercise",
+    "problem",
+    "quiz",
+    "exam",
+    "test",
+    "lecture",
+    "lab",
+    "project",
+    "assignment",
+    "homework",
 ]
 
 # Minimum word count for a specific goal
@@ -143,15 +171,12 @@ class ClarificationChecker:
         result = self.check(goal=goal)
         return result.needs_clarification
 
-    def check_plan_feasibility(
-        self, tasks, available_minutes: int
-    ) -> bool:
+    def check_plan_feasibility(self, tasks, available_minutes: int) -> bool:
         """
         Return True if the plan exceeds available time and needs negotiation.
         """
         total_minutes = sum(
-            t.estimated_minutes if hasattr(t, "estimated_minutes") else 0
-            for t in tasks
+            t.estimated_minutes if hasattr(t, "estimated_minutes") else 0 for t in tasks
         )
         return total_minutes > available_minutes
 
@@ -240,9 +265,7 @@ class ClarificationChecker:
             try:
                 from datetime import datetime, timezone
 
-                deadline = datetime.fromisoformat(
-                    deadline_iso.replace("Z", "+00:00")
-                )
+                deadline = datetime.fromisoformat(deadline_iso.replace("Z", "+00:00"))
                 now = datetime.now(timezone.utc)
                 days_until = (deadline - now).days
 

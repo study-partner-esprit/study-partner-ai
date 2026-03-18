@@ -17,7 +17,12 @@ sys.path.insert(0, str(root_path))
 
 from services.ai_orchestrator.orchestrator import AIOrchestrator
 from services.signal_processing_service.service import SignalProcessingService
-from agents.coach.models.schemas import CoachInput, FocusState, FatigueState, ScheduledTask
+from agents.coach.models.schemas import (
+    CoachInput,
+    FocusState,
+    FatigueState,
+    ScheduledTask,
+)
 
 
 def test_coach_fatigue_integration():
@@ -35,7 +40,7 @@ def test_coach_fatigue_integration():
         ("Alert", 0.15, "Should allow normal coaching"),
         ("Moderate", 0.45, "Should be neutral"),
         ("High", 0.75, "Should suggest break"),
-        ("Critical", 0.95, "Should force break")
+        ("Critical", 0.95, "Should force break"),
     ]
 
     for fatigue_state, fatigue_score, expected in test_cases:
@@ -47,7 +52,7 @@ def test_coach_fatigue_integration():
         snapshot = signal_service.get_current_signal_snapshot(
             user_id="test_user_fatigue",
             video_features=None,  # Mock focus data
-            video_frame=None      # Mock fatigue data
+            video_frame=None,  # Mock fatigue data
         )
 
         # Override the fatigue data in the snapshot
@@ -59,6 +64,7 @@ def test_coach_fatigue_integration():
         snapshot.focus_confidence = 0.90
         # Ensure unique timestamp
         from datetime import datetime
+
         snapshot.timestamp = datetime.now()
 
         # Manually save this snapshot so the orchestrator can find it
@@ -69,7 +75,7 @@ def test_coach_fatigue_integration():
             user_id="test_user_fatigue",
             current_time=datetime.now(),
             ignored_count=0,
-            do_not_disturb=False
+            do_not_disturb=False,
         )
 
         print(f"   Coach action: {coach_action.action_type}")
@@ -79,15 +85,23 @@ def test_coach_fatigue_integration():
 
         # Verify expected behavior
         if fatigue_state == "Critical":
-            assert coach_action.action_type == "suggest_break", f"Expected suggest_break for {fatigue_state}, got {coach_action.action_type}"
-            assert "fatigue" in coach_action.reasoning.lower(), f"Expected fatigue mention in reasoning: {coach_action.reasoning}"
+            assert (
+                coach_action.action_type == "suggest_break"
+            ), f"Expected suggest_break for {fatigue_state}, got {coach_action.action_type}"
+            assert (
+                "fatigue" in coach_action.reasoning.lower()
+            ), f"Expected fatigue mention in reasoning: {coach_action.reasoning}"
         elif fatigue_state == "High":
             # High fatigue should suggest break unless deeply focused
             # Since focus is high, it should still be silent (focus overrides high fatigue)
-            assert coach_action.action_type == "silence", f"Expected silence for high focus overriding {fatigue_state}: {coach_action.action_type}"
+            assert (
+                coach_action.action_type == "silence"
+            ), f"Expected silence for high focus overriding {fatigue_state}: {coach_action.action_type}"
         else:
             # Alert/Moderate fatigue with high focus should be silent
-            assert coach_action.action_type == "silence", f"Expected silence for {fatigue_state} with high focus: {coach_action.action_type}"
+            assert (
+                coach_action.action_type == "silence"
+            ), f"Expected silence for {fatigue_state} with high focus: {coach_action.action_type}"
 
     print("\n" + "=" * 60)
     print("✓ Coach fatigue integration test complete!")
@@ -112,12 +126,14 @@ def test_rule_engine_directly():
         affective_state="stressed",
         ignored_count=0,
         do_not_disturb=False,
-        is_late=False
+        is_late=False,
     )
 
     action = apply_rules(critical_input)
     assert action is not None, "Critical fatigue should trigger a rule"
-    assert action.action_type == "suggest_break", f"Expected suggest_break, got {action.action_type}"
+    assert (
+        action.action_type == "suggest_break"
+    ), f"Expected suggest_break, got {action.action_type}"
     print("   ✓ Critical fatigue correctly triggers break suggestion")
 
     # Test high fatigue rule
@@ -130,12 +146,14 @@ def test_rule_engine_directly():
         affective_state="engaged",
         ignored_count=0,
         do_not_disturb=False,
-        is_late=False
+        is_late=False,
     )
 
     action = apply_rules(high_input)
     assert action is not None, "High fatigue should trigger a rule"
-    assert action.action_type == "suggest_break", f"Expected suggest_break, got {action.action_type}"
+    assert (
+        action.action_type == "suggest_break"
+    ), f"Expected suggest_break, got {action.action_type}"
     print("   ✓ High fatigue correctly triggers break suggestion")
 
     # Test focus override
@@ -148,12 +166,14 @@ def test_rule_engine_directly():
         affective_state="engaged",
         ignored_count=0,
         do_not_disturb=False,
-        is_late=False
+        is_late=False,
     )
 
     action = apply_rules(focused_input)
     assert action is not None, "Deep focus should still trigger silence rule"
-    assert action.action_type == "silence", f"Expected silence for deep focus, got {action.action_type}"
+    assert (
+        action.action_type == "silence"
+    ), f"Expected silence for deep focus, got {action.action_type}"
     print("   ✓ Deep focus correctly overrides high fatigue (prioritizes focus)")
 
     print("\n" + "=" * 60)

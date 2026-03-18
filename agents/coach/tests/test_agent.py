@@ -2,12 +2,15 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from agents.coach.agent import run_coach
 from agents.coach.models.schemas import (
-    CoachInput, ScheduledTask, FocusState, FatigueState
+    CoachInput,
+    ScheduledTask,
+    FocusState,
+    FatigueState,
 )
 
 
-@patch('agents.coach.services.planner_repository.PlannerRepository.get_scheduled_tasks')
-@patch('agents.coach.decision.llm_decider.call_gemini')
+@patch("agents.coach.services.planner_repository.PlannerRepository.get_scheduled_tasks")
+@patch("agents.coach.decision.llm_decider.call_gemini")
 def test_coach_pipeline(mock_call_gemini, mock_get_tasks):
     # Mock scheduled tasks
     mock_tasks = [
@@ -16,7 +19,7 @@ def test_coach_pipeline(mock_call_gemini, mock_get_tasks):
             title="MapReduce lecture",
             start_time=datetime.now(),
             end_time=datetime.now() + timedelta(minutes=45),
-            priority=1
+            priority=1,
         )
     ]
     mock_get_tasks.return_value = mock_tasks
@@ -31,7 +34,7 @@ def test_coach_pipeline(mock_call_gemini, mock_get_tasks):
         fatigue_state=FatigueState(state="Moderate", score=0.3),
         affective_state="engaged",
         ignored_count=0,
-        do_not_disturb=False
+        do_not_disturb=False,
     )
 
     action = run_coach(data)

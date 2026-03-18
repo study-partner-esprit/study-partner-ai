@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 
+
 def histogram_equalization(image):
     """
     Apply histogram equalization to improve contrast.
@@ -13,6 +14,7 @@ def histogram_equalization(image):
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return cv2.equalizeHist(gray)
+
 
 def smooth_values(buffer, new_value, max_size=10):
     """
@@ -28,6 +30,7 @@ def smooth_values(buffer, new_value, max_size=10):
     if len(buffer) > max_size:
         buffer.pop(0)
     return sum(buffer) / len(buffer) if buffer else 0.0
+
 
 def format_time(seconds):
     """
@@ -48,6 +51,7 @@ def format_time(seconds):
     else:
         return f"{secs}s"
 
+
 def draw_landmarks(frame, landmarks, indices, color=(0, 255, 0), thickness=2):
     """
     Draw facial landmarks on frame.
@@ -62,9 +66,10 @@ def draw_landmarks(frame, landmarks, indices, color=(0, 255, 0), thickness=2):
     for i in indices:
         if i < len(landmarks):
             landmark = landmarks[i]
-            cv2.circle(frame, 
-                      (int(landmark.x * w), int(landmark.y * h)),
-                      thickness, color, -1)
+            cv2.circle(
+                frame, (int(landmark.x * w), int(landmark.y * h)), thickness, color, -1
+            )
+
 
 def calculate_fps(frame_count, start_time, current_time):
     """
@@ -79,9 +84,16 @@ def calculate_fps(frame_count, start_time, current_time):
     elapsed = current_time - start_time
     return frame_count / elapsed if elapsed > 0 else 0.0
 
-def create_status_overlay(frame, text_lines, position=(20, 30), 
-                         line_spacing=25, font_scale=0.6, 
-                         color=(0, 255, 0), thickness=2):
+
+def create_status_overlay(
+    frame,
+    text_lines,
+    position=(20, 30),
+    line_spacing=25,
+    font_scale=0.6,
+    color=(0, 255, 0),
+    thickness=2,
+):
     """
     Create text overlay with multiple lines.
     Args:
@@ -95,9 +107,11 @@ def create_status_overlay(frame, text_lines, position=(20, 30),
     """
     x, y = position
     for line in text_lines:
-        cv2.putText(frame, line, (x, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+        cv2.putText(
+            frame, line, (x, y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness
+        )
         y += line_spacing
+
 
 def create_alert_border(frame, color=(0, 0, 255), thickness=5):
     """
@@ -109,6 +123,7 @@ def create_alert_border(frame, color=(0, 0, 255), thickness=5):
     """
     h, w = frame.shape[:2]
     cv2.rectangle(frame, (0, 0), (w, h), color, thickness)
+
 
 def resize_maintain_aspect(image, target_height=460):
     """
@@ -123,6 +138,7 @@ def resize_maintain_aspect(image, target_height=460):
     scale = h / target_height
     new_width = int(w / scale)
     return cv2.resize(image, (new_width, target_height))
+
 
 def calculate_progress_bar(value, max_value):
     """

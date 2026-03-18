@@ -428,4 +428,3 @@ class TestSchedulerEdgeCases:
         # Most or all tasks should fit in one day
         assert plan.span_days == 1
         assert len(plan.sessions) >= 5
-

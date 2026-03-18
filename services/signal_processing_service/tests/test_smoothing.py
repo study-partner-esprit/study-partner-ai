@@ -6,7 +6,11 @@ Run with:
 """
 
 import pytest
-from services.signal_processing_service.smoothing import EMAState, FOCUS_ALPHA, FATIGUE_ALPHA
+from services.signal_processing_service.smoothing import (
+    EMAState,
+    FOCUS_ALPHA,
+    FATIGUE_ALPHA,
+)
 
 
 class TestEMAState:

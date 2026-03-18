@@ -26,7 +26,7 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DB_NAME   = os.getenv("DB_NAME", "study_partner")
+DB_NAME = os.getenv("DB_NAME", "study_partner")
 COLLECTION = "search_history"
 
 
@@ -37,6 +37,7 @@ class SearchRepository:
         self._col = None
         try:
             from pymongo import MongoClient
+
             client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
             self._col = client[DB_NAME][COLLECTION]
         except Exception as exc:
@@ -56,15 +57,17 @@ class SearchRepository:
         if self._col is None or not user_id:
             return
         try:
-            self._col.insert_one({
-                "user_id":    user_id,
-                "session_id": session_id,
-                "trace_id":   trace_id,
-                "ts":         datetime.now(tz=timezone.utc),
-                "question":   question,
-                "answer":     answer,
-                "sources":    sources or [],
-            })
+            self._col.insert_one(
+                {
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "trace_id": trace_id,
+                    "ts": datetime.now(tz=timezone.utc),
+                    "question": question,
+                    "answer": answer,
+                    "sources": sources or [],
+                }
+            )
         except Exception as exc:
             logger.warning("search_repo_save_error", extra={"error": str(exc)})
 
@@ -73,8 +76,7 @@ class SearchRepository:
             return []
         try:
             cursor = (
-                self._col
-                .find({"user_id": user_id}, {"_id": 0})
+                self._col.find({"user_id": user_id}, {"_id": 0})
                 .sort("ts", -1)
                 .limit(limit)
             )

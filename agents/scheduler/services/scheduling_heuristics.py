@@ -57,9 +57,11 @@ def score_slot(
         score += focus_bonus
         logger.debug(
             "score_slot_focus_bonus",
-            extra={"hour": hour, "avg_focus": round(avg_focus, 3),
-                   "bonus": round(focus_bonus, 3)},
+            extra={
+                "hour": hour,
+                "avg_focus": round(avg_focus, 3),
+                "bonus": round(focus_bonus, 3),
+            },
         )
 
     return max(0.0, min(1.0, score))
-

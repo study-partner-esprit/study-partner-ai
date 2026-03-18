@@ -26,13 +26,11 @@ def test_planner_to_scheduler_pipeline():
         user_goal="Learn Python basics",
         available_time_minutes=120,
         course_context=course_context,
-    ) 
+    )
 
     assert len(tasks) > 0
 
-    context = SchedulingContext(
-        calendar_events=[]
-    )
+    context = SchedulingContext(calendar_events=[])
 
     plan = scheduler.build_schedule(tasks, context)
 

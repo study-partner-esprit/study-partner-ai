@@ -108,7 +108,7 @@ Example:
                     difficulty = difficulty_map.get(difficulty_str.lower(), 0.5)
                 else:
                     difficulty = float(difficulty_str)
-                
+
                 # Clamp difficulty to valid range (0.0-1.0)
                 difficulty = max(0.0, min(1.0, difficulty))
 
@@ -142,12 +142,11 @@ Example:
             task_titles = {task.title for task in tasks}
             for task in tasks:
                 task.prerequisites = [
-                    prereq for prereq in task.prerequisites 
-                    if prereq in task_titles
+                    prereq for prereq in task.prerequisites if prereq in task_titles
                 ]
 
             return tasks
-            
+
         except Exception as e:
             print(f"[LLMDecomposerReal] Error calling LLM: {e}")
             response_text = (

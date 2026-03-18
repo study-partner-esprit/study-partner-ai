@@ -22,7 +22,7 @@ def call_llm(prompt: str, system_prompt: str = None) -> str:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        
+
         response = requests.post(
             LM_STUDIO_URL,
             json={
@@ -30,16 +30,16 @@ def call_llm(prompt: str, system_prompt: str = None) -> str:
                 "temperature": 0.1,
                 "max_tokens": 2000,
             },
-            timeout=30
+            timeout=30,
         )
-        
+
         if response.status_code == 200:
             result = response.json()
             return result["choices"][0]["message"]["content"]
         else:
             print(f"LM Studio API error: {response.status_code} - {response.text}")
             return ""
-            
+
     except Exception as e:
         print(f"Error calling LM Studio: {e}")
         return ""
@@ -205,7 +205,7 @@ Return JSON now:
 """
 
     raw = call_llm(prompt)
-    
+
     if not raw:
         print("LLM enrichment failed, fallback used.")
         return {

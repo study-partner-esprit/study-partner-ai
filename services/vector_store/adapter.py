@@ -212,9 +212,7 @@ class VectorStoreAdapter:
         if self._db is not None and self._load_index_from_mongo(course_id):
             return self._indices[course_id]
 
-        logger.warning(
-            "vector_store_course_not_found", extra={"course_id": course_id}
-        )
+        logger.warning("vector_store_course_not_found", extra={"course_id": course_id})
         return None
 
     # -- Disk I/O -------------------------------------------------------- #
@@ -308,7 +306,8 @@ def get_vector_store() -> VectorStoreAdapter:
     Process-level singleton.  Imports MongoDB connection lazily to avoid
     circular imports at module load time.
     """
-    from services.database import get_db   # noqa: PLC0415
+    from services.database import get_db  # noqa: PLC0415
+
     db = None
     try:
         db = get_db()

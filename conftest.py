@@ -20,10 +20,10 @@ if str(ROOT) not in sys.path:
 # Add relative paths (from rootdir) as strings.
 # ---------------------------------------------------------------------------
 collect_ignore: list[str] = [
-    "agents/course_ingestion/tests/test_ingestion.py",   # manual PDF ingestion script
+    "agents/course_ingestion/tests/test_ingestion.py",  # manual PDF ingestion script
 ]
 
 collect_ignore_glob: list[str] = [
-    "**/demo_*.py",       # interactive demo scripts
+    "**/demo_*.py",  # interactive demo scripts
     "**/test_*_manual.py",  # explicitly manual scripts
 ]

@@ -104,9 +104,7 @@ class PlannerAgent:
                     extra={"num_chunks": chunks_added},
                 )
             except Exception as e:
-                logger.warning(
-                    "planner_index_failed", extra={"error": str(e)}
-                )
+                logger.warning("planner_index_failed", extra={"error": str(e)})
 
         # Step 3: Retrieve relevant concepts using RAG
         if course_texts:
@@ -121,7 +119,10 @@ class PlannerAgent:
 
         # Step 5: Decompose goal/course into tasks
         tasks = self._decompose_goal(
-            effective_goal, retrieved_concepts, request.available_minutes, request.course_knowledge
+            effective_goal,
+            retrieved_concepts,
+            request.available_minutes,
+            request.course_knowledge,
         )
 
         # Step 6: Apply rules engine
@@ -140,9 +141,10 @@ class PlannerAgent:
 
         # Step 9: Persist FAISS index to disk if we built one
         course_id = (
-            request.course_knowledge.get("_id") or
-            request.course_knowledge.get("course_title", "default")
-            if request.course_knowledge else None
+            request.course_knowledge.get("_id")
+            or request.course_knowledge.get("course_title", "default")
+            if request.course_knowledge
+            else None
         )
         if course_id and self.retriever.indexed_chunks:
             try:
@@ -268,9 +270,8 @@ class PlannerAgent:
         # --- path 2: disk-cached FAISS index --- #
         course_id = None
         if course_knowledge:
-            course_id = (
-                str(course_knowledge.get("_id") or
-                course_knowledge.get("course_title", ""))
+            course_id = str(
+                course_knowledge.get("_id") or course_knowledge.get("course_title", "")
             )
         if course_id:
             disk_index, disk_chunks = load_index(course_id)
@@ -284,12 +285,17 @@ class PlannerAgent:
                 return len(disk_chunks)
 
         # --- path 3: fallback — re-encode from text --- #
-        logger.info("planner_reencoding_course_texts",
-                    extra={"num_texts": len(course_texts)})
+        logger.info(
+            "planner_reencoding_course_texts", extra={"num_texts": len(course_texts)}
+        )
         return self.retriever.add_documents(course_texts, tokenization_settings)
 
     def _decompose_goal(
-        self, goal: str, concepts: list, available_minutes: int, course_knowledge: dict = None
+        self,
+        goal: str,
+        concepts: list,
+        available_minutes: int,
+        course_knowledge: dict = None,
     ) -> list:
         """
         Decompose the learning goal into atomic tasks.
@@ -297,7 +303,11 @@ class PlannerAgent:
         Tries LLM decomposer first, falls back to simple decomposer.
         """
         # If course knowledge is provided and goal is derived from course, generate tasks from course
-        if course_knowledge and goal and self._is_goal_from_course(goal, course_knowledge):
+        if (
+            course_knowledge
+            and goal
+            and self._is_goal_from_course(goal, course_knowledge)
+        ):
             logger.debug("planner_course_based_decompose", extra={"goal": goal})
             return self._generate_tasks_from_course(course_knowledge, available_minutes)
 
@@ -305,7 +315,9 @@ class PlannerAgent:
         logger.debug("planner_llm_decompose", extra={"goal": goal})
         llm_tasks = self.llm_decomposer.decompose(goal, concepts, available_minutes)
         if llm_tasks and len(llm_tasks) > 1:
-            logger.debug("planner_llm_decompose_ok", extra={"num_tasks": len(llm_tasks)})
+            logger.debug(
+                "planner_llm_decompose_ok", extra={"num_tasks": len(llm_tasks)}
+            )
             return llm_tasks
 
         # Fallback to simple decomposer
@@ -410,7 +422,9 @@ class PlannerAgent:
         Returns:
             True if goal appears to be derived from course
         """
-        course_title = course_knowledge.get("title") or course_knowledge.get("course_title", "")
+        course_title = course_knowledge.get("title") or course_knowledge.get(
+            "course_title", ""
+        )
         result = bool(course_title and course_title in goal)
         logger.debug(
             "planner_is_goal_from_course",
@@ -418,7 +432,9 @@ class PlannerAgent:
         )
         return result
 
-    def _generate_tasks_from_course(self, course_knowledge: dict, available_minutes: int) -> list:
+    def _generate_tasks_from_course(
+        self, course_knowledge: dict, available_minutes: int
+    ) -> list:
         """
         Generate tasks directly from course structure.
 
@@ -436,7 +452,9 @@ class PlannerAgent:
         task_id_counter = 1
 
         # Extract course title
-        course_title = course_knowledge.get("title") or course_knowledge.get("course_title", "Course")
+        course_title = course_knowledge.get("title") or course_knowledge.get(
+            "course_title", "Course"
+        )
 
         # Add an introductory task
         intro_task = AtomicTask(
@@ -446,7 +464,7 @@ class PlannerAgent:
             estimated_minutes=min(30, available_minutes // 4),
             difficulty=0.2,
             prerequisites=[],
-            is_review=False
+            is_review=False,
         )
         tasks.append(intro_task)
         task_id_counter += 1
@@ -464,7 +482,7 @@ class PlannerAgent:
                     estimated_minutes=min(45, available_minutes // 6),
                     difficulty=0.5,
                     prerequisites=[intro_task.id] if tasks else [],
-                    is_review=False
+                    is_review=False,
                 )
                 tasks.append(topic_task)
                 task_id_counter += 1
@@ -472,19 +490,30 @@ class PlannerAgent:
                 # Generate tasks from subtopics
                 if "subtopics" in topic:
                     for subtopic_idx, subtopic in enumerate(topic["subtopics"]):
-                        subtopic_title = subtopic.get("title", f"Subtopic {subtopic_idx + 1}")
+                        subtopic_title = subtopic.get(
+                            "title", f"Subtopic {subtopic_idx + 1}"
+                        )
 
                         # Combine description from available content
                         # Prioritize clean tokenized_chunks over potentially unclean summary
                         description_parts = []
-                        if "tokenized_chunks" in subtopic and subtopic["tokenized_chunks"]:
+                        if (
+                            "tokenized_chunks" in subtopic
+                            and subtopic["tokenized_chunks"]
+                        ):
                             # Use the first clean chunk
-                            description_parts.append(subtopic["tokenized_chunks"][0][:300])
+                            description_parts.append(
+                                subtopic["tokenized_chunks"][0][:300]
+                            )
                         elif "summary" in subtopic:
                             # Fallback to summary if no tokenized chunks
                             description_parts.append(subtopic["summary"][:300])
 
-                        description = " ".join(description_parts) if description_parts else f"Study {subtopic_title}"
+                        description = (
+                            " ".join(description_parts)
+                            if description_parts
+                            else f"Study {subtopic_title}"
+                        )
 
                         subtopic_task = AtomicTask(
                             id=f"task-{task_id_counter:03d}",
@@ -493,7 +522,7 @@ class PlannerAgent:
                             estimated_minutes=min(30, available_minutes // 8),
                             difficulty=0.6,
                             prerequisites=[topic_task.id],
-                            is_review=False
+                            is_review=False,
                         )
                         tasks.append(subtopic_task)
                         task_id_counter += 1
@@ -506,8 +535,10 @@ class PlannerAgent:
                 description=f"Review all key concepts from {course_title}",
                 estimated_minutes=min(45, available_minutes // 4),
                 difficulty=0.4,
-                prerequisites=[task.id for task in tasks[-3:]],  # Depend on last few tasks
-                is_review=True
+                prerequisites=[
+                    task.id for task in tasks[-3:]
+                ],  # Depend on last few tasks
+                is_review=True,
             )
             tasks.append(review_task)
 
@@ -516,6 +547,8 @@ class PlannerAgent:
         if total_time > available_minutes:
             scale_factor = available_minutes / total_time
             for task in tasks:
-                task.estimated_minutes = max(5, int(task.estimated_minutes * scale_factor))
+                task.estimated_minutes = max(
+                    5, int(task.estimated_minutes * scale_factor)
+                )
 
         return tasks

@@ -18,22 +18,31 @@ class VoiceService:
         try:
             self.tts_engine = pyttsx3.init()
             if VoiceConfig.TTS_RATE:
-                self.tts_engine.setProperty('rate', VoiceConfig.TTS_RATE)
+                self.tts_engine.setProperty("rate", VoiceConfig.TTS_RATE)
             if VoiceConfig.TTS_VOLUME:
-                self.tts_engine.setProperty('volume', VoiceConfig.TTS_VOLUME)
+                self.tts_engine.setProperty("volume", VoiceConfig.TTS_VOLUME)
         except Exception as e:
             logger.error("Failed to init TTS: %s", e)
             self.tts_engine = None
 
-    def listen_for_question(self, timeout: Optional[int] = None, phrase_time_limit: Optional[int] = None, callback: Optional[Callable[[str], None]] = None) -> str:
+    def listen_for_question(
+        self,
+        timeout: Optional[int] = None,
+        phrase_time_limit: Optional[int] = None,
+        callback: Optional[Callable[[str], None]] = None,
+    ) -> str:
         timeout = timeout or VoiceConfig.STT_TIMEOUT
         phrase_time_limit = phrase_time_limit or VoiceConfig.STT_PHRASE_TIME_LIMIT
         try:
             with sr.Microphone() as source:
                 self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
+                audio = self.recognizer.listen(
+                    source, timeout=timeout, phrase_time_limit=phrase_time_limit
+                )
             if VoiceConfig.USE_GOOGLE_STT:
-                text = self.recognizer.recognize_google(audio, language=VoiceConfig.STT_LANGUAGE)
+                text = self.recognizer.recognize_google(
+                    audio, language=VoiceConfig.STT_LANGUAGE
+                )
             else:
                 text = self.recognizer.recognize_sphinx(audio)
             text = text.strip()
@@ -43,7 +52,12 @@ class VoiceService:
         except Exception:
             return ""
 
-    def speak_text(self, text: str, async_mode: bool = False, callback: Optional[Callable[[], None]] = None) -> bool:
+    def speak_text(
+        self,
+        text: str,
+        async_mode: bool = False,
+        callback: Optional[Callable[[], None]] = None,
+    ) -> bool:
         if not text or not text.strip():
             return False
         if not self.tts_engine:

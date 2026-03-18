@@ -83,4 +83,3 @@ def _persist_action(
             "coach_persist_action_error",
             extra={"error": str(exc), "trace_id": trace_id},
         )
-

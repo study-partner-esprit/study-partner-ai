@@ -12,10 +12,10 @@ import pytest
 
 from agents.planner.memory.pacing_store import PacingStore, MIN_RECORDS, DEFAULT_FACTOR
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_store(documents=None):
     """Return a PacingStore with a mocked MongoDB collection."""
@@ -30,6 +30,7 @@ def _make_store(documents=None):
 # ---------------------------------------------------------------------------
 # Tests: get_user_pacing_factor
 # ---------------------------------------------------------------------------
+
 
 class TestGetUserPacingFactor:
 
@@ -69,8 +70,8 @@ class TestGetUserPacingFactor:
         store, col = _make_store()
 
         call_results = [
-            [],                 # subject-specific: empty
-            global_docs,        # global fallback
+            [],  # subject-specific: empty
+            global_docs,  # global fallback
         ]
         call_count = [0]
 
@@ -88,6 +89,7 @@ class TestGetUserPacingFactor:
 # ---------------------------------------------------------------------------
 # Tests: record_task_completion
 # ---------------------------------------------------------------------------
+
 
 class TestRecordTaskCompletion:
 
@@ -119,7 +121,9 @@ class TestRecordTaskCompletion:
     def test_prunes_old_records(self):
         old_docs = [{"_id": f"id_{i}"} for i in range(5)]
         col = MagicMock()
-        col.find.return_value.sort.return_value.limit.return_value = []  # for find in record
+        col.find.return_value.sort.return_value.limit.return_value = (
+            []
+        )  # for find in record
         col.aggregate.return_value = old_docs
 
         store = PacingStore.__new__(PacingStore)

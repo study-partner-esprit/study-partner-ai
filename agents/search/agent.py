@@ -79,7 +79,11 @@ def process_question(
             "urls": urls,
             "trace_id": trace_id,
             "degraded": True,
-            "reason": "Search pipeline time budget exceeded" if timed_out else "No content extracted from sources",
+            "reason": (
+                "Search pipeline time budget exceeded"
+                if timed_out
+                else "No content extracted from sources"
+            ),
         }
 
     prompt = (
@@ -107,6 +111,7 @@ def process_question(
     # Persist to MongoDB (graceful no-op when DB unavailable or no user_id)
     try:
         from .services.search_repository import SearchRepository
+
         SearchRepository().save_exchange(
             user_id=user_id,
             question=question,
@@ -119,12 +124,12 @@ def process_question(
         pass
 
     return {
-        "success":       True,
-        "question":      question,
-        "answer":        answer,
+        "success": True,
+        "question": question,
+        "answer": answer,
         "sources_count": len(urls),
-        "urls":          urls,
-        "trace_id":      trace_id,
+        "urls": urls,
+        "trace_id": trace_id,
     }
 
 
@@ -159,7 +164,13 @@ def create_app():
 
     @app.route("/api/voice/config", methods=["GET"])
     def api_voice_config():
-        return jsonify({"success": True, "config": VoiceConfig.get_config(), "available_voices": voice_service.get_available_voices()})
+        return jsonify(
+            {
+                "success": True,
+                "config": VoiceConfig.get_config(),
+                "available_voices": voice_service.get_available_voices(),
+            }
+        )
 
     return app
 

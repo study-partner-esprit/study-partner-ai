@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 def normalize_busy_slots(raw_events: List[dict]) -> List[TimeSlot]:
     """
     Normalize raw calendar events into TimeSlot objects.
-    
+
     Args:
         raw_events: List of calendar events with ISO format timestamps.
                    Example: [{"start": "2026-02-06T09:00:00", "end": "2026-02-06T10:30:00"}]
-    
+
     Returns:
         List of TimeSlot objects
     """
@@ -24,17 +24,17 @@ def normalize_busy_slots(raw_events: List[dict]) -> List[TimeSlot]:
         try:
             start = datetime.fromisoformat(ev["start"])
             end = datetime.fromisoformat(ev["end"])
-            
+
             # Convert to naive datetime (assume UTC if timezone-aware)
             if start.tzinfo is not None:
                 start = start.replace(tzinfo=None)
             if end.tzinfo is not None:
                 end = end.replace(tzinfo=None)
-            
+
             if start >= end:
                 logger.warning(f"Invalid event: start {start} >= end {end}")
                 continue
-            
+
             busy.append(
                 TimeSlot(
                     start=start,

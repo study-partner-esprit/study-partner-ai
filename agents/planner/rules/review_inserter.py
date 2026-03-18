@@ -14,7 +14,9 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-def insert_review_tasks(tasks, user_id: str = "", pending_reviews: Optional[List] = None):
+def insert_review_tasks(
+    tasks, user_id: str = "", pending_reviews: Optional[List] = None
+):
     """
     Insert pending review tasks into the existing task list.
 
@@ -39,6 +41,7 @@ def insert_review_tasks(tasks, user_id: str = "", pending_reviews: Optional[List
     if not reviews and user_id:
         try:
             from agents.planner.memory.review_inserter import ReviewInserter
+
             inserter = ReviewInserter()
             reviews = inserter.get_pending_reviews(user_id, limit=10)
         except Exception as exc:

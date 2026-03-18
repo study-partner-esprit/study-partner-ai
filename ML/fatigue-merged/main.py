@@ -27,9 +27,13 @@ from modules.webcam import Webcam
 from modules.face_features import FaceFeatures
 from modules.fatigue_rules import FatigueRules
 from config import (
-    SHOW_GUI, WINDOW_NAME, CALIBRATION_FRAMES, CAMERA_TIMEOUT,
-    FATIGUE_SCORE_THRESHOLD
+    SHOW_GUI,
+    WINDOW_NAME,
+    CALIBRATION_FRAMES,
+    CAMERA_TIMEOUT,
+    FATIGUE_SCORE_THRESHOLD,
 )
+
 
 def main():
     """Main fatigue detection loop."""
@@ -54,14 +58,16 @@ def main():
         # MediaPipe Face Landmarker setup
         print("🎯 Setting up MediaPipe face detection...")
         options = FaceLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path='ML/fatigue-merged/face_landmarker.task'),
+            base_options=BaseOptions(
+                model_asset_path="ML/fatigue-merged/face_landmarker.task"
+            ),
             running_mode=mp.tasks.vision.RunningMode.IMAGE,
             num_faces=1,
             min_face_detection_confidence=0.5,
             min_face_presence_confidence=0.5,
             min_tracking_confidence=0.5,
             output_face_blendshapes=True,
-            output_facial_transformation_matrixes=True
+            output_facial_transformation_matrixes=True,
         )
 
         face_landmarker = FaceLandmarker.create_from_options(options)
@@ -79,13 +85,16 @@ def main():
             # Process frame for calibration
             h, w, _ = frame_bgr.shape
             scale = h / 460  # RESIZE_HEIGHT from config
-            frame_resized = cv2.resize(frame_bgr, None, fx=1/scale, fy=1/scale)
+            frame_resized = cv2.resize(frame_bgr, None, fx=1 / scale, fy=1 / scale)
 
             # Simple preprocessing for calibration
             gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
             adjusted = cv2.equalizeHist(gray)
 
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(adjusted, cv2.COLOR_GRAY2RGB))
+            mp_image = mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=cv2.cvtColor(adjusted, cv2.COLOR_GRAY2RGB),
+            )
             results = face_landmarker.detect(mp_image)
 
             if results.face_landmarks:
@@ -133,14 +142,17 @@ def main():
             # Resize frame for processing
             h, w, _ = frame_bgr.shape
             scale = h / 460
-            frame_resized = cv2.resize(frame_bgr, None, fx=1/scale, fy=1/scale)
+            frame_resized = cv2.resize(frame_bgr, None, fx=1 / scale, fy=1 / scale)
 
             # Preprocessing
             gray = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2GRAY)
             adjusted = cv2.equalizeHist(gray)
 
             # MediaPipe face detection
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(adjusted, cv2.COLOR_GRAY2RGB))
+            mp_image = mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=cv2.cvtColor(adjusted, cv2.COLOR_GRAY2RGB),
+            )
             results = face_landmarker.detect(mp_image)
 
             if results.face_landmarks:
@@ -155,20 +167,26 @@ def main():
                 left_eye = []
                 for i in left_eye_indices:
                     landmark = face_landmarks[i]
-                    left_eye.append(type('Point', (), {
-                        'x': landmark.x * scale_x,
-                        'y': landmark.y * scale_y
-                    })())
+                    left_eye.append(
+                        type(
+                            "Point",
+                            (),
+                            {"x": landmark.x * scale_x, "y": landmark.y * scale_y},
+                        )()
+                    )
 
                 # RIGHT EYE
                 right_eye_indices = [263, 386, 385, 362, 381, 380]
                 right_eye = []
                 for i in right_eye_indices:
                     landmark = face_landmarks[i]
-                    right_eye.append(type('Point', (), {
-                        'x': landmark.x * scale_x,
-                        'y': landmark.y * scale_y
-                    })())
+                    right_eye.append(
+                        type(
+                            "Point",
+                            (),
+                            {"x": landmark.x * scale_x, "y": landmark.y * scale_y},
+                        )()
+                    )
 
                 # MOUTH (for yawning detection)
                 # MediaPipe mouth landmarks: outer lips
@@ -177,18 +195,30 @@ def main():
                 for i in mouth_indices:
                     if i < len(face_landmarks):
                         landmark = face_landmarks[i]
-                        mouth.append(type('Point', (), {
-                            'x': landmark.x * scale_x,
-                            'y': landmark.y * scale_y
-                        })())
+                        mouth.append(
+                            type(
+                                "Point",
+                                (),
+                                {"x": landmark.x * scale_x, "y": landmark.y * scale_y},
+                            )()
+                        )
 
                 # BROW points
-                left_brow = (int(face_landmarks[105].x * w), int(face_landmarks[105].y * h))
-                right_brow = (int(face_landmarks[334].x * w), int(face_landmarks[334].y * h))
+                left_brow = (
+                    int(face_landmarks[105].x * w),
+                    int(face_landmarks[105].y * h),
+                )
+                right_brow = (
+                    int(face_landmarks[334].x * w),
+                    int(face_landmarks[334].y * h),
+                )
 
                 # JAW points
                 top_jaw = (int(face_landmarks[13].x * w), int(face_landmarks[13].y * h))
-                bottom_jaw = (int(face_landmarks[14].x * w), int(face_landmarks[14].y * h))
+                bottom_jaw = (
+                    int(face_landmarks[14].x * w),
+                    int(face_landmarks[14].y * h),
+                )
 
                 # Feature extraction
                 left_ear = face_features.eye_aspect_ratio(left_eye)
@@ -203,8 +233,14 @@ def main():
                 yawning = face_features.yawning_detection(mar)
 
                 # Fatigue analysis
-                fatigue_prob, suggest_break, fatigue_level, factors = fatigue_rules.compute_fatigue_score(
-                    (left_ear + right_ear) / 2, blink_rate, brow_dist, jaw_open, yawning
+                fatigue_prob, suggest_break, fatigue_level, factors = (
+                    fatigue_rules.compute_fatigue_score(
+                        (left_ear + right_ear) / 2,
+                        blink_rate,
+                        brow_dist,
+                        jaw_open,
+                        yawning,
+                    )
                 )
 
                 # Display results
@@ -215,7 +251,7 @@ def main():
                         f"Fatigue: {fatigue_prob:.2f} ({fatigue_level})",
                         f"Blinks/min: {blink_rate}",
                         f"Yawns: {yawning}",
-                        f"Trend: {fatigue_rules.get_fatigue_trend()}"
+                        f"Trend: {fatigue_rules.get_fatigue_trend()}",
                     ]
 
                     if suggest_break:
@@ -224,16 +260,27 @@ def main():
                     # Draw status
                     y_offset = 30
                     for line in status_lines:
-                        cv2.putText(frame_bgr, line, (20, y_offset),
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        cv2.putText(
+                            frame_bgr,
+                            line,
+                            (20, y_offset),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            (0, 255, 0),
+                            2,
+                        )
                         y_offset += 25
 
                     # Draw facial landmarks
                     for i in left_eye_indices + right_eye_indices:
                         landmark = face_landmarks[i]
-                        cv2.circle(frame_bgr,
-                                 (int(landmark.x * w), int(landmark.y * h)),
-                                 2, (0, 255, 0), -1)
+                        cv2.circle(
+                            frame_bgr,
+                            (int(landmark.x * w), int(landmark.y * h)),
+                            2,
+                            (0, 255, 0),
+                            -1,
+                        )
 
                     # Alert styling
                     if suggest_break:
@@ -243,7 +290,7 @@ def main():
                     cv2.imshow(WINDOW_NAME, frame_bgr)
 
                     key = cv2.waitKey(1) & 0xFF
-                    if key == ord('q'):
+                    if key == ord("q"):
                         break
                 else:
                     # Console output mode
@@ -262,12 +309,19 @@ def main():
             else:
                 # No face detected
                 if SHOW_GUI:
-                    cv2.putText(frame_bgr, "No face detected", (20, 30),
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                    cv2.putText(
+                        frame_bgr,
+                        "No face detected",
+                        (20, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 0, 255),
+                        2,
+                    )
                     cv2.imshow(WINDOW_NAME, frame_bgr)
 
                     key = cv2.waitKey(1) & 0xFF
-                    if key == ord('q'):
+                    if key == ord("q"):
                         break
                 else:
                     print("\rNo face detected", end="", flush=True)
@@ -278,15 +332,17 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         # Cleanup
         print("\n🧹 Cleaning up...")
-        if 'webcam' in locals():
+        if "webcam" in locals():
             webcam.release()
         if SHOW_GUI:
             cv2.destroyAllWindows()
         print("✅ Cleanup complete")
+
 
 if __name__ == "__main__":
     main()

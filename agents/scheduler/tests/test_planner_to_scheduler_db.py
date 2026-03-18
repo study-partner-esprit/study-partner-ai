@@ -14,12 +14,13 @@ from agents.planner.models.task_graph import PlannerInput
 from agents.scheduler.agent import SchedulerAgent, SchedulingContext
 from models.task import Task
 
-
 # Replace this with an actual existing course ObjectId from your MongoDB
 TEST_COURSE_ID = "6984fed077f336f5b99c9c45"
 
 
-@pytest.mark.skip(reason="Integration test: requires live MongoDB with seeded course document")
+@pytest.mark.skip(
+    reason="Integration test: requires live MongoDB with seeded course document"
+)
 @pytest.mark.integration
 class TestPlannerToSchedulerIntegration:
     """Integration tests for the complete planner-to-scheduler pipeline."""
@@ -34,7 +35,9 @@ class TestPlannerToSchedulerIntegration:
         db_service = DatabaseService()
         course_doc = db_service.get_course_by_id(TEST_COURSE_ID)
 
-        assert course_doc is not None, f"Course with ID {TEST_COURSE_ID} not found in database"
+        assert (
+            course_doc is not None
+        ), f"Course with ID {TEST_COURSE_ID} not found in database"
 
         # Step 2: Generate tasks using PlannerAgent
         planner = PlannerAgent()
@@ -54,8 +57,12 @@ class TestPlannerToSchedulerIntegration:
 
         # Verify planner output
         assert planner_output.task_graph is not None
-        assert len(planner_output.task_graph.tasks) > 0, "Planner should generate at least one task"
-        assert not planner_output.clarification_required, "Test course should not require clarification"
+        assert (
+            len(planner_output.task_graph.tasks) > 0
+        ), "Planner should generate at least one task"
+        assert (
+            not planner_output.clarification_required
+        ), "Test course should not require clarification"
 
         # Step 3: Convert AtomicTask objects to Task objects for scheduler
         tasks = []
@@ -92,8 +99,12 @@ class TestPlannerToSchedulerIntegration:
 
         # Step 5: Verify the final study plan
         assert study_plan is not None
-        assert len(study_plan.sessions) > 0, "Scheduler should create at least one scheduled session"
-        assert study_plan.total_minutes > 0, "Study plan should have positive total minutes"
+        assert (
+            len(study_plan.sessions) > 0
+        ), "Scheduler should create at least one scheduled session"
+        assert (
+            study_plan.total_minutes > 0
+        ), "Study plan should have positive total minutes"
 
         # Verify that all scheduled sessions have valid times
         for session in study_plan.sessions:

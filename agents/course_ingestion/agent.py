@@ -5,7 +5,10 @@ from agents.course_ingestion.parsing.section_builder import build_subtopics
 from agents.course_ingestion.normalization.normalizer import normalize_course
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.course_ingestion.normalization.tokenizer import tokenize_subtopics
-from agents.course_ingestion.enrichment.llm_enricher import enrich_subtopic_with_llm, generate_subtopic_title
+from agents.course_ingestion.enrichment.llm_enricher import (
+    enrich_subtopic_with_llm,
+    generate_subtopic_title,
+)
 from agents.course_ingestion.enrichment.chunk_embedder import embed_all_subtopics
 from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
 from utils.logger import get_logger
@@ -14,7 +17,10 @@ logger = get_logger(__name__)
 
 
 def ingest_course(course_title: str, pdf_files: list):
-    logger.info("ingest_course_start", extra={"course_title": course_title, "num_files": len(pdf_files)})
+    logger.info(
+        "ingest_course_start",
+        extra={"course_title": course_title, "num_files": len(pdf_files)},
+    )
     all_sections = []
 
     for pdf_path in pdf_files:
@@ -40,19 +46,23 @@ def ingest_course(course_title: str, pdf_files: list):
     # Step 4: enrich subtopics with LLM (clean metadata, extract concepts)
     enriched_subtopics = []
     for subtopic in subtopics:
-        enriched_data = enrich_subtopic_with_llm(subtopic['title'], subtopic['full_content'])
-        cleaned_content = enriched_data.get('cleaned_text') or subtopic['full_content']
+        enriched_data = enrich_subtopic_with_llm(
+            subtopic["title"], subtopic["full_content"]
+        )
+        cleaned_content = enriched_data.get("cleaned_text") or subtopic["full_content"]
         # Update subtopic with enriched content
-        subtopic['full_content'] = cleaned_content
-        subtopic['key_concepts'] = enriched_data.get('key_concepts', subtopic.get('key_concepts', []))
-        subtopic['definitions'] = enriched_data.get('definitions', [])
-        subtopic['formulas'] = enriched_data.get('formulas', [])
-        subtopic['examples'] = enriched_data.get('examples', [])
+        subtopic["full_content"] = cleaned_content
+        subtopic["key_concepts"] = enriched_data.get(
+            "key_concepts", subtopic.get("key_concepts", [])
+        )
+        subtopic["definitions"] = enriched_data.get("definitions", [])
+        subtopic["formulas"] = enriched_data.get("formulas", [])
+        subtopic["examples"] = enriched_data.get("examples", [])
         # Re-generate the title from the now-clean content so metadata is gone
         try:
             refined_title = generate_subtopic_title(cleaned_content)
             if refined_title:
-                subtopic['title'] = refined_title
+                subtopic["title"] = refined_title
         except Exception as title_err:
             logger.warning("title_refinement_failed", extra={"error": str(title_err)})
         enriched_subtopics.append(subtopic)

@@ -20,7 +20,9 @@ class ScheduleUpdater:
     def __init__(self):
         self.mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
         self.db_name = os.getenv("DB_NAME", "study_partner")
-        self.collection_name = os.getenv("TASK_SCHEDULING_COLLECTION", "task_scheduling")
+        self.collection_name = os.getenv(
+            "TASK_SCHEDULING_COLLECTION", "task_scheduling"
+        )
 
         self.client = MongoClient(self.mongo_uri)
         self.db = self.client[self.db_name]
@@ -73,10 +75,12 @@ class ScheduleUpdater:
         break_session = {
             "task_id": f"break_{int(current_time.timestamp())}",
             "start_datetime": current_time.isoformat(),
-            "end_datetime": (current_time + timedelta(minutes=change.duration_minutes)).isoformat(),
+            "end_datetime": (
+                current_time + timedelta(minutes=change.duration_minutes)
+            ).isoformat(),
             "break_after_minutes": 0,
             "slot_score": 1.0,
-            "scheduled": True
+            "scheduled": True,
         }
 
         # Insert break at the beginning (immediate break)
@@ -94,12 +98,18 @@ class ScheduleUpdater:
                 end_time = session["end_datetime"]
 
             # Shift this session
-            session["start_datetime"] = (start_time + timedelta(minutes=change.duration_minutes)).isoformat()
-            session["end_datetime"] = (end_time + timedelta(minutes=change.duration_minutes)).isoformat()
+            session["start_datetime"] = (
+                start_time + timedelta(minutes=change.duration_minutes)
+            ).isoformat()
+            session["end_datetime"] = (
+                end_time + timedelta(minutes=change.duration_minutes)
+            ).isoformat()
 
         # Save the updated document
         self.collection.replace_one({"_id": doc["_id"]}, doc)
-        print(f"Added {change.duration_minutes}-minute break and shifted subsequent tasks")
+        print(
+            f"Added {change.duration_minutes}-minute break and shifted subsequent tasks"
+        )
         return True
 
         return False

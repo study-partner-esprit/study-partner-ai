@@ -131,7 +131,9 @@ def train(labels_csv: str, output_dir: str):
     )
 
     # Fine-tune: unfreeze last N layers of backbone
-    base_model = model.layers[1] if hasattr(model.layers[1], "layers") else model.layers[0]
+    base_model = (
+        model.layers[1] if hasattr(model.layers[1], "layers") else model.layers[0]
+    )
     base_model.trainable = True
     for layer in base_model.layers[:FINE_TUNE_AT]:
         layer.trainable = False
@@ -142,7 +144,9 @@ def train(labels_csv: str, output_dir: str):
         metrics=["accuracy"],
     )
 
-    print(f"[3/4] Phase 2 — Fine-tuning last {abs(FINE_TUNE_AT)} layers ({EPOCHS_FINE_TUNE} epochs)")
+    print(
+        f"[3/4] Phase 2 — Fine-tuning last {abs(FINE_TUNE_AT)} layers ({EPOCHS_FINE_TUNE} epochs)"
+    )
     model.fit(
         train_gen,
         validation_data=val_gen,
@@ -159,7 +163,9 @@ def train(labels_csv: str, output_dir: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train focus CNN with transfer learning")
+    parser = argparse.ArgumentParser(
+        description="Train focus CNN with transfer learning"
+    )
     parser.add_argument(
         "--labels",
         default="data/labels_balanced.csv",

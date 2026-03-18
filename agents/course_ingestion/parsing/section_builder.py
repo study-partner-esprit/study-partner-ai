@@ -1,15 +1,28 @@
 import re
-from agents.course_ingestion.enrichment.llm_enricher import generate_subtopic_title, clean_metadata
-
+from agents.course_ingestion.enrichment.llm_enricher import (
+    generate_subtopic_title,
+    clean_metadata,
+)
 
 # Patterns that indicate a line is metadata rather than a real title
 _METADATA_PATTERNS = [
     re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),  # email
-    re.compile(r"\b(Prof\.?|Professor|Dr\.?|Docteur|M\.|Mme|Madame|Monsieur|Mr\.|Mrs\.|Ms\.)\s+[A-Z]", re.IGNORECASE),  # title + name
-    re.compile(r"\b(University|Université|Institut|École|Ecole|ESPRIT|Polytechnique)\b", re.IGNORECASE),  # institution
-    re.compile(r"\b(Plan\s+module|Module\s+plan|Course\s+outline|Plan\s+de\s+cours)\b", re.IGNORECASE),  # course admin
+    re.compile(
+        r"\b(Prof\.?|Professor|Dr\.?|Docteur|M\.|Mme|Madame|Monsieur|Mr\.|Mrs\.|Ms\.)\s+[A-Z]",
+        re.IGNORECASE,
+    ),  # title + name
+    re.compile(
+        r"\b(University|Université|Institut|École|Ecole|ESPRIT|Polytechnique)\b",
+        re.IGNORECASE,
+    ),  # institution
+    re.compile(
+        r"\b(Plan\s+module|Module\s+plan|Course\s+outline|Plan\s+de\s+cours)\b",
+        re.IGNORECASE,
+    ),  # course admin
     re.compile(r"\b[A-Z]{2,4}[-_]?\d{2,4}\b"),  # course code e.g. CS101
-    re.compile(r"\b(Fall|Spring|Summer|Autumn|Semester|Trimestre)\s+\d{4}\b", re.IGNORECASE),  # semester
+    re.compile(
+        r"\b(Fall|Spring|Summer|Autumn|Semester|Trimestre)\s+\d{4}\b", re.IGNORECASE
+    ),  # semester
 ]
 
 
@@ -42,14 +55,20 @@ def build_subtopics(sections):
         elif content_text:
             # Use first meaningful line as candidate
             first_line = sec["content"][0] if sec["content"] else f"Subtopic {idx}"
-            candidate = clean_metadata(first_line[:120].strip()) if first_line else f"Subtopic {idx}"
+            candidate = (
+                clean_metadata(first_line[:120].strip())
+                if first_line
+                else f"Subtopic {idx}"
+            )
         else:
             candidate = f"Subtopic {idx}"
 
         # Determine whether we should generate a proper title via LLM:
         # - title is generic/short, OR
         # - the raw source text contained metadata (email, names, institution)
-        raw_source = (sec["title"] or (sec["content"][0] if sec["content"] else "")).strip()
+        raw_source = (
+            sec["title"] or (sec["content"][0] if sec["content"] else "")
+        ).strip()
         candidate_words = len([w for w in candidate.split() if w.isalpha()])
         needs_llm_title = (
             candidate.lower().startswith("subtopic")
@@ -60,7 +79,11 @@ def build_subtopics(sections):
         if needs_llm_title:
             try:
                 generated = generate_subtopic_title(content_text)
-                title = generated if generated else (candidate if candidate_words >= 2 else f"Subtopic {idx}")
+                title = (
+                    generated
+                    if generated
+                    else (candidate if candidate_words >= 2 else f"Subtopic {idx}")
+                )
             except Exception:
                 title = candidate if candidate_words >= 2 else f"Subtopic {idx}"
         else:

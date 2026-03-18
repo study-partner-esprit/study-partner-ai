@@ -25,7 +25,7 @@ def test_coach_scheduler_integration():
             "focus_score": 0.1,
             "fatigue_probability": 0.9,
             "affective_state": "frustrated",
-            "expected": "suggest_break with schedule_changes"
+            "expected": "suggest_break with schedule_changes",
         },
         {
             "name": "High Fatigue - Break Suggestion",
@@ -33,7 +33,7 @@ def test_coach_scheduler_integration():
             "focus_score": 0.3,
             "fatigue_probability": 0.8,
             "affective_state": "stressed",
-            "expected": "suggest_break with schedule_changes"
+            "expected": "suggest_break with schedule_changes",
         },
         {
             "name": "Extreme Fatigue Late Night - Session Suspension",
@@ -42,7 +42,7 @@ def test_coach_scheduler_integration():
             "fatigue_probability": 0.95,
             "affective_state": "frustrated",
             "is_late": True,
-            "expected": "suggest_break with session suspension"
+            "expected": "suggest_break with session suspension",
         },
         {
             "name": "Focused Student - No Changes",
@@ -50,7 +50,7 @@ def test_coach_scheduler_integration():
             "focus_score": 0.9,
             "fatigue_probability": 0.2,
             "affective_state": "engaged",
-            "expected": "silence (no schedule changes)"
+            "expected": "silence (no schedule changes)",
         },
         {
             "name": "Do Not Disturb - No Changes",
@@ -59,8 +59,8 @@ def test_coach_scheduler_integration():
             "fatigue_probability": 0.6,
             "affective_state": "bored",
             "do_not_disturb": True,
-            "expected": "silence (DND active)"
-        }
+            "expected": "silence (DND active)",
+        },
     ]
 
     for scenario in test_scenarios:
@@ -75,7 +75,7 @@ def test_coach_scheduler_integration():
             affective_state=scenario["affective_state"],
             ignored_count=scenario.get("ignored_count", 0),
             do_not_disturb=scenario.get("do_not_disturb", False),
-            is_late=scenario.get("is_late", False)
+            is_late=scenario.get("is_late", False),
         )
 
         # Analyze results
@@ -83,17 +83,17 @@ def test_coach_scheduler_integration():
         schedule_modified = result["schedule_modified"]
 
         print(f"✅ Action: {action['action_type']}")
-        if action.get('message'):
+        if action.get("message"):
             print(f"   💬 \"{action['message']}\"")
         print(f"📅 Schedule Modified: {schedule_modified}")
 
         if schedule_modified:
             for mod in result["modifications"]:
                 print(f"   🔧 Applied: {mod['action']}")
-                if mod['action'] == 'add_break':
-                    duration = mod['details'].get('duration_minutes', 'unknown')
+                if mod["action"] == "add_break":
+                    duration = mod["details"].get("duration_minutes", "unknown")
                     print(f"      ⏰ Added {duration}-minute break")
-                elif mod['action'] == 'suspend_session':
+                elif mod["action"] == "suspend_session":
                     print(f"      🛌 Suspended session until tomorrow")
 
         # Verify expectations
@@ -101,7 +101,7 @@ def test_coach_scheduler_integration():
         if "break" in scenario["expected"] and not schedule_modified:
             success = False
             print("❌ Expected schedule modification but none occurred")
-        elif "silence" in scenario["expected"] and action['action_type'] != 'silence':
+        elif "silence" in scenario["expected"] and action["action_type"] != "silence":
             success = False
             print("❌ Expected silence but got different action")
         elif "suspension" in scenario["expected"] and not schedule_modified:
@@ -113,7 +113,7 @@ def test_coach_scheduler_integration():
         else:
             print("❌ Scenario failed")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🎉 Coach-Scheduler Integration Test Complete!")
     print("\n📋 SUMMARY:")
     print("• Coach adapts break duration based on fatigue level (5-10 minutes)")

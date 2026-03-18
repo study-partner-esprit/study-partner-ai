@@ -18,7 +18,7 @@ The ease factor adjusts based on user recall quality:
   - quality 3 (okay):            ease_factor unchanged
   - quality 4 (good):            ease_factor += 0.1
   - quality 5 (perfect):         ease_factor += 0.15
-  
+
 Minimum ease factor: 1.3
 Maximum ease factor: 3.5
 Default ease factor: 2.5
@@ -66,7 +66,7 @@ DEFAULT_EASE = 2.5
 class ReviewInserter:
     """
     Generates and manages spaced repetition review tasks.
-    
+
     Uses a modified SM-2 algorithm with Fibonacci-like base intervals
     that adapt based on user recall quality.
     """
@@ -75,6 +75,7 @@ class ReviewInserter:
         self._db = None
         try:
             from services.database import get_db
+
             self._db = get_db()
         except Exception as exc:
             logger.warning("review_inserter_no_db", extra={"error": str(exc)})
@@ -192,10 +193,12 @@ class ReviewInserter:
         quality_score = max(0, min(5, quality_score))
 
         try:
-            review = self._db[REVIEW_COLLECTION].find_one({
-                "review_id": review_id,
-                "user_id": user_id,
-            })
+            review = self._db[REVIEW_COLLECTION].find_one(
+                {
+                    "review_id": review_id,
+                    "user_id": user_id,
+                }
+            )
 
             if not review:
                 logger.warning("review_not_found", extra={"review_id": review_id})
@@ -213,15 +216,16 @@ class ReviewInserter:
                 # Failed recall: reset to beginning
                 new_review_number = 1
                 new_interval = BASE_INTERVALS[0]
-                logger.info("review_reset", extra={
-                    "review_id": review_id,
-                    "quality": quality_score,
-                })
+                logger.info(
+                    "review_reset",
+                    extra={
+                        "review_id": review_id,
+                        "quality": quality_score,
+                    },
+                )
             else:
                 new_review_number = old_review_number + 1
-                new_interval = self._calculate_interval(
-                    new_review_number, new_ease
-                )
+                new_interval = self._calculate_interval(new_review_number, new_ease)
 
             next_review = now + timedelta(days=new_interval)
 
@@ -358,34 +362,50 @@ class ReviewInserter:
             Dict with review counts and performance metrics.
         """
         if self._db is None:
-            return {"total": 0, "pending": 0, "overdue": 0, "completed": 0, "avg_quality": 0}
+            return {
+                "total": 0,
+                "pending": 0,
+                "overdue": 0,
+                "completed": 0,
+                "avg_quality": 0,
+            }
 
         try:
             collection = self._db[REVIEW_COLLECTION]
             now = datetime.now(timezone.utc)
 
             total = collection.count_documents({"user_id": user_id})
-            pending = collection.count_documents({
-                "user_id": user_id,
-                "status": "scheduled",
-                "next_review_date": {"$gte": now},
-            })
-            overdue = collection.count_documents({
-                "user_id": user_id,
-                "status": {"$in": ["scheduled", "overdue"]},
-                "next_review_date": {"$lt": now},
-            })
-            completed = collection.count_documents({
-                "user_id": user_id,
-                "status": "completed",
-            })
+            pending = collection.count_documents(
+                {
+                    "user_id": user_id,
+                    "status": "scheduled",
+                    "next_review_date": {"$gte": now},
+                }
+            )
+            overdue = collection.count_documents(
+                {
+                    "user_id": user_id,
+                    "status": {"$in": ["scheduled", "overdue"]},
+                    "next_review_date": {"$lt": now},
+                }
+            )
+            completed = collection.count_documents(
+                {
+                    "user_id": user_id,
+                    "status": "completed",
+                }
+            )
 
             # Calculate average quality score
-            completed_reviews = list(collection.find({
-                "user_id": user_id,
-                "status": "completed",
-                "quality_history": {"$ne": []},
-            }).limit(100))
+            completed_reviews = list(
+                collection.find(
+                    {
+                        "user_id": user_id,
+                        "status": "completed",
+                        "quality_history": {"$ne": []},
+                    }
+                ).limit(100)
+            )
 
             all_qualities = []
             for review in completed_reviews:
@@ -407,7 +427,13 @@ class ReviewInserter:
 
         except Exception as exc:
             logger.error("review_stats_failed", extra={"error": str(exc)})
-            return {"total": 0, "pending": 0, "overdue": 0, "completed": 0, "avg_quality": 0}
+            return {
+                "total": 0,
+                "pending": 0,
+                "overdue": 0,
+                "completed": 0,
+                "avg_quality": 0,
+            }
 
     # ------------------------------------------------------------------ #
     # Private helpers                                                      #
@@ -458,7 +484,7 @@ class ReviewInserter:
         else:
             # Beyond base intervals: last base * ease_factor^(review_number - len(BASE_INTERVALS))
             extra_steps = review_number - len(BASE_INTERVALS)
-            interval = int(BASE_INTERVALS[-1] * (ease_factor ** extra_steps))
+            interval = int(BASE_INTERVALS[-1] * (ease_factor**extra_steps))
 
         # Clamp to reasonable bounds
         return max(1, min(interval, 180))

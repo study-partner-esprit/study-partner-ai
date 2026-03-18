@@ -9,10 +9,10 @@ import numpy as np
 import pytest
 from unittest.mock import patch
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _normed(vecs: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(vecs, axis=1, keepdims=True)
@@ -30,11 +30,13 @@ def _fake_encode(texts):
 # Tests: deduplicator
 # ---------------------------------------------------------------------------
 
+
 class TestDeduplicator:
     from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
 
     def test_no_duplicates_unchanged(self):
         from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
+
         chunks = ["Alpha", "Beta", "Gamma"]
         # Orthogonal unit vectors — all pairwise sims are ~0
         vecs = _normed(np.eye(3, 4, dtype="float32"))
@@ -44,9 +46,12 @@ class TestDeduplicator:
 
     def test_exact_duplicate_removed(self):
         from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
+
         chunks = ["A", "B", "A_copy"]
         # First and last are identical vectors
-        v = _normed(np.array([[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0]], dtype="float32"))
+        v = _normed(
+            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [1, 0, 0, 0]], dtype="float32")
+        )
         out_chunks, out_vecs = deduplicate_chunks(chunks, v, threshold=0.95)
         assert len(out_chunks) == 2
         assert "A" in out_chunks
@@ -54,10 +59,12 @@ class TestDeduplicator:
 
     def test_empty_input(self):
         from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
+
         assert deduplicate_chunks([], []) == ([], [])
 
     def test_single_element(self):
         from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
+
         v = _normed(np.array([[1, 0, 0, 0]], dtype="float32"))
         out_c, out_v = deduplicate_chunks(["X"], v)
         assert out_c == ["X"]
@@ -65,6 +72,7 @@ class TestDeduplicator:
 
     def test_list_input_accepted(self):
         from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
+
         # List[List[float]] format
         chunks = ["A", "B"]
         embeddings = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]
@@ -75,6 +83,7 @@ class TestDeduplicator:
 # ---------------------------------------------------------------------------
 # Tests: chunk_embedder
 # ---------------------------------------------------------------------------
+
 
 class TestChunkEmbedder:
 
@@ -89,7 +98,9 @@ class TestChunkEmbedder:
             "agents.course_ingestion.enrichment.chunk_embedder.get_embedder",
             return_value=fake_embedder,
         ):
-            from agents.course_ingestion.enrichment.chunk_embedder import embed_all_subtopics
+            from agents.course_ingestion.enrichment.chunk_embedder import (
+                embed_all_subtopics,
+            )
 
             subtopics = [
                 {"tokenized_chunks": ["chunk A", "chunk B"]},
@@ -113,7 +124,9 @@ class TestChunkEmbedder:
             "agents.course_ingestion.enrichment.chunk_embedder.get_embedder",
             return_value=fake_embedder,
         ):
-            from agents.course_ingestion.enrichment.chunk_embedder import embed_all_subtopics
+            from agents.course_ingestion.enrichment.chunk_embedder import (
+                embed_all_subtopics,
+            )
 
             subtopics = [{"tokenized_chunks": []}]
             result = embed_all_subtopics(subtopics)

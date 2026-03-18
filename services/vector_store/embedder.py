@@ -32,6 +32,7 @@ class EmbeddingService:
 
     def __init__(self) -> None:
         from sentence_transformers import SentenceTransformer
+
         logger.info("embedding_model_loading", extra={"model": self.MODEL_NAME})
         self._model = SentenceTransformer(self.MODEL_NAME)
         logger.info("embedding_model_ready", extra={"model": self.MODEL_NAME})
