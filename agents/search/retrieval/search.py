@@ -44,7 +44,7 @@ def _duckduckgo_web_search(query, max_results=5):
         return []
 
 
-def apify_web_search(query, max_results=5, wait_timeout=30):
+def apify_web_search(query, max_results=5, wait_timeout=12):
     apify_api_key = _get_apify_api_key()
 
     if not apify_api_key:
@@ -59,7 +59,7 @@ def apify_web_search(query, max_results=5, wait_timeout=30):
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=5)
         if response.status_code not in [200, 201]:
             print(f"❌ Error response: {response.text}")
             return []
@@ -76,7 +76,7 @@ def apify_web_search(query, max_results=5, wait_timeout=30):
         start_time = time.time()
 
         while time.time() - start_time < wait_timeout:
-            status_response = requests.get(run_status_url, timeout=10)
+            status_response = requests.get(run_status_url, timeout=5)
             status_response.raise_for_status()
             status_data = status_response.json()
             status = status_data.get("data", {}).get("status")
@@ -85,7 +85,7 @@ def apify_web_search(query, max_results=5, wait_timeout=30):
                 if not dataset_id:
                     return []
                 dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items?token={apify_api_key}"
-                dataset_response = requests.get(dataset_url, timeout=10)
+                dataset_response = requests.get(dataset_url, timeout=5)
                 dataset_response.raise_for_status()
                 items = dataset_response.json()
                 urls = []
@@ -117,7 +117,7 @@ def apify_web_search(query, max_results=5, wait_timeout=30):
             elif status in ["FAILED", "ABORTED", "TIMED-OUT"]:
                 return []
 
-            time.sleep(2)
+            time.sleep(1)
 
         return []
 
@@ -129,7 +129,9 @@ def apify_web_search(query, max_results=5, wait_timeout=30):
         return []
 
 
-def web_search(query, max_results=5, wait_timeout=30):
+def web_search(query, max_results=5, wait_timeout=None):
+    if wait_timeout is None:
+        wait_timeout = int(os.getenv("SEARCH_RETRIEVAL_TIMEOUT_SECONDS", "12"))
     urls = apify_web_search(query, max_results=max_results, wait_timeout=wait_timeout)
     if urls:
         return urls

@@ -45,7 +45,7 @@ def process_question(
         "Please try again in a bit or rephrase your question with more specific keywords."
     )
 
-    max_pipeline_seconds = int(os.getenv("SEARCH_PIPELINE_TIMEOUT_SECONDS", "90"))
+    max_pipeline_seconds = int(os.getenv("SEARCH_PIPELINE_TIMEOUT_SECONDS", "70"))
     pipeline_started_at = time.time()
 
     urls = web_search(question, max_results=5)
@@ -88,6 +88,18 @@ def process_question(
         f"Provide a clear, comprehensive answer based only on the sources above."
     )
     answer = ask_llm(prompt)
+
+    if not answer:
+        return {
+            "success": True,
+            "question": question,
+            "answer": "I found relevant web sources, but answer generation is currently unavailable. Please try again shortly.",
+            "sources_count": len(urls),
+            "urls": urls,
+            "trace_id": trace_id,
+            "degraded": True,
+            "reason": "LLM unavailable",
+        }
 
     if use_voice and answer:
         get_voice_service().speak_text(answer, async_mode=True)
