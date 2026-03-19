@@ -210,7 +210,7 @@ def run_study_planner_with_course_id(
         Dictionary containing the planner output with task graph
     """
     if user_id is None:
-        raise ValueError("user_id is required – pass the authenticated user's ID")""
+        raise ValueError("user_id is required – pass the authenticated user's ID")
     # Step 1: Retrieve the normalized course JSON from MongoDB
     print("🔍 Retrieving course data from database...")
     db = DatabaseService()
