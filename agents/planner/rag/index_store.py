@@ -80,6 +80,12 @@ def load_index(course_id: str) -> Tuple[Optional[faiss.Index], Optional[List[str
         index = faiss.read_index(str(index_path))
         meta = json.loads(meta_path.read_text())
         chunks: List[str] = meta.get("chunks", [])
+        if index.ntotal != len(chunks):
+            logger.warning(
+                "index_store_integrity_mismatch",
+                extra={"course_id": course_id, "ntotal": index.ntotal, "chunks": len(chunks)},
+            )
+            return None, None
         logger.info(
             "index_store_loaded",
             extra={"course_id": course_id, "ntotal": index.ntotal},
@@ -107,6 +113,31 @@ def load_embeddings(course_id: str) -> Optional[np.ndarray]:
             extra={"course_id": course_id, "error": str(exc)},
         )
         return None
+
+
+def rebuild_index_from_embeddings(
+    course_id: str,
+    chunks: List[str],
+    embeddings: np.ndarray,
+) -> Tuple[Optional[faiss.Index], Optional[List[str]]]:
+    """Rebuild and persist a FAISS index from raw embeddings for recovery flows."""
+    try:
+        if len(chunks) != len(embeddings):
+            raise ValueError("chunks and embeddings length mismatch")
+        if len(chunks) == 0:
+            raise ValueError("cannot rebuild empty index")
+
+        dim = int(embeddings.shape[1])
+        index = faiss.IndexFlatIP(dim)
+        index.add(embeddings.astype("float32"))
+        save_index(index=index, chunks=chunks, course_id=course_id, embeddings=embeddings)
+        return index, chunks
+    except Exception as exc:
+        logger.warning(
+            "index_store_rebuild_failed",
+            extra={"course_id": course_id, "error": str(exc)},
+        )
+        return None, None
 
 
 def delete_index(course_id: str) -> None:

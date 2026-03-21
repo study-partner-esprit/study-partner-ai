@@ -37,6 +37,7 @@ from agents.course_ingestion.enrichment.task_generator import (
 from agents.course_ingestion.services.database_service import DatabaseService
 from agents.planner.agent import PlannerAgent
 from agents.planner.models.task_graph import PlannerInput
+from agents.coach.models.schemas import CoachAction
 from services.ai_orchestrator.orchestrator import AIOrchestrator
 from services.schedule_orchestrator.orchestrator import ScheduleOrchestrator
 from services.signal_processing_service.focus_detector import get_focus_detector
@@ -986,6 +987,63 @@ class RescheduleRequest(BaseModel):
     reason: str = "manual"
 
 
+class SchedulerOptimizeRequest(BaseModel):
+    user_id: str
+    reason: str = "manual_optimize"
+
+
+class SchedulerApplyCoachActionRequest(BaseModel):
+    user_id: str
+    coach_action: Dict[str, Any]
+
+
+class EvaluateSessionRequest(BaseModel):
+    user_id: str
+    session_duration_minutes: int = 0
+    focus_score: float = 0.0
+    completed_tasks: int = 0
+    skipped_tasks: int = 0
+
+
+@app.post("/api/ai/vector/rebuild/{course_id}")
+async def rebuild_vector_index(course_id: str):
+    """Attempt to load/rebuild a course vector index from persisted stores."""
+    try:
+        from services.vector_store.adapter import get_vector_store
+
+        store = get_vector_store()
+        loaded = store.load_course(course_id)
+        if not loaded:
+            raise HTTPException(status_code=404, detail="Course index not found")
+
+        return {
+            "status": "ok",
+            "course_id": course_id,
+            "loaded": True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/vector/status/{course_id}")
+async def vector_index_status(course_id: str):
+    """Get in-memory status of a course vector index."""
+    try:
+        from services.vector_store.adapter import get_vector_store
+
+        store = get_vector_store()
+        loaded = store.load_course(course_id)
+        return {
+            "status": "ok",
+            "course_id": course_id,
+            "loaded": loaded,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/ai/scheduler/reschedule")
 async def reschedule(request: RescheduleRequest):
     """
@@ -1004,6 +1062,65 @@ async def reschedule(request: RescheduleRequest):
         }
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/scheduler/apply-coach-action")
+async def apply_coach_action_to_schedule(request: SchedulerApplyCoachActionRequest):
+    """Apply explicit coach action schedule changes for a user."""
+    try:
+        coach_action = CoachAction(**request.coach_action)
+        result = get_schedule_orchestrator().process_coach_action(
+            coach_action=coach_action,
+            user_id=request.user_id,
+            current_time=datetime.now(),
+        )
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ai/scheduler/status/{user_id}")
+async def scheduler_status(user_id: str):
+    """Get current schedule status for a user."""
+    try:
+        status = get_schedule_orchestrator().get_schedule_status(user_id)
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/ai/scheduler/optimize")
+async def optimize_schedule(request: SchedulerOptimizeRequest):
+    """Run schedule optimization for a user and persist snapshot."""
+    try:
+        result = get_schedule_orchestrator().optimize_schedule(
+            request.user_id, reason=request.reason
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/evaluator/session")
+async def evaluate_session(request: EvaluateSessionRequest):
+    """Evaluate a completed study session and return coaching-quality feedback."""
+    try:
+        from agents.evaluator.agent import EvaluatorAgent
+
+        evaluator = EvaluatorAgent()
+        evaluation = evaluator.evaluate(
+            session_duration_minutes=request.session_duration_minutes,
+            focus_score=request.focus_score,
+            completed_tasks=request.completed_tasks,
+            skipped_tasks=request.skipped_tasks,
+        )
+        return {
+            "status": "ok",
+            "user_id": request.user_id,
+            "evaluation": evaluation.as_dict(),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

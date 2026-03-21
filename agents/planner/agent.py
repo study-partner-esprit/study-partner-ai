@@ -16,7 +16,12 @@ from agents.planner.rules.buffer_inserter import insert_buffers
 from agents.planner.rules.feasibility import is_plan_feasible
 from agents.planner.rules.clarification import ClarificationChecker
 from agents.planner.memory.pacing_store import PacingStore
-from agents.planner.rag.index_store import save_index, load_index
+from agents.planner.rag.index_store import (
+    save_index,
+    load_index,
+    load_embeddings,
+    rebuild_index_from_embeddings,
+)
 
 # RAG + embeddings imports
 from agents.planner.rag.embeddings import EmbeddingModel
@@ -152,6 +157,7 @@ class PlannerAgent:
                     self.vector_store.index,
                     self.retriever.indexed_chunks,
                     str(course_id),
+                    embeddings=getattr(self.retriever, "last_embeddings", None),
                 )
             except Exception as exc:
                 logger.warning("planner_save_index_failed", extra={"error": str(exc)})
@@ -283,6 +289,23 @@ class PlannerAgent:
                 self.vector_store.index = disk_index
                 self.retriever.indexed_chunks = disk_chunks
                 return len(disk_chunks)
+            # Recovery path: rebuild index from stored embeddings when index files are missing/corrupt.
+            disk_embeddings = load_embeddings(course_id)
+            if disk_embeddings is not None and len(course_texts) == len(disk_embeddings):
+                rebuilt_index, rebuilt_chunks = rebuild_index_from_embeddings(
+                    course_id, course_texts, disk_embeddings
+                )
+                if rebuilt_index is not None:
+                    self.vector_store.index = rebuilt_index
+                    self.retriever.indexed_chunks = rebuilt_chunks or []
+                    logger.info(
+                        "planner_rebuilt_disk_index",
+                        extra={
+                            "course_id": course_id,
+                            "ntotal": rebuilt_index.ntotal,
+                        },
+                    )
+                    return len(self.retriever.indexed_chunks)
 
         # --- path 3: fallback — re-encode from text --- #
         logger.info(

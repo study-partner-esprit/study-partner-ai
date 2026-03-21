@@ -39,6 +39,7 @@ class ScheduleOrchestrator:
         self.task_scheduling_collection = self.db["task_scheduling"]
         self.study_plan_collection = self.db["studyplans"]
         self.schedule_history_collection = self.db["schedule_history"]
+        self.schedule_snapshots_collection = self.db["schedule_snapshots"]
 
     def process_coach_action(
         self,
@@ -158,6 +159,15 @@ class ScheduleOrchestrator:
                         user_id, "add_break", change, current_time, session=session
                     )
 
+                    self._persist_schedule_snapshot(
+                        user_id,
+                        schedule_doc.get("_id"),
+                        sessions_list,
+                        "add_break",
+                        current_time,
+                        session=session,
+                    )
+
                 return {
                     "status": "success",
                     "message": f"Added {change.duration_minutes or 15}-minute break",
@@ -227,6 +237,15 @@ class ScheduleOrchestrator:
 
                     self._log_schedule_change(
                         user_id, "extend_task", change, current_time, session=session
+                    )
+
+                    self._persist_schedule_snapshot(
+                        user_id,
+                        schedule_doc.get("_id"),
+                        sessions_list,
+                        "extend_task",
+                        current_time,
+                        session=session,
                     )
 
                 return {
@@ -318,6 +337,15 @@ class ScheduleOrchestrator:
                         session=session,
                     )
 
+                    self._persist_schedule_snapshot(
+                        user_id,
+                        schedule_doc.get("_id"),
+                        sessions_list,
+                        "reschedule_task",
+                        current_time,
+                        session=session,
+                    )
+
                 return {
                     "status": "success",
                     "message": f"Rescheduled task {task_id} to {new_start}",
@@ -365,6 +393,15 @@ class ScheduleOrchestrator:
 
                     self._log_schedule_change(
                         user_id, "cancel_task", change, current_time, session=session
+                    )
+
+                    self._persist_schedule_snapshot(
+                        user_id,
+                        schedule_doc.get("_id"),
+                        sessions_list,
+                        "cancel_task",
+                        current_time,
+                        session=session,
                     )
 
                 return {"status": "success", "message": f"Cancelled task {task_id}"}
@@ -425,6 +462,98 @@ class ScheduleOrchestrator:
                 )
                 return {"status": "error", "message": f"Failed to suspend: {str(e)}"}
 
+    def get_schedule_status(self, user_id: str) -> dict:
+        """Return current schedule status and latest snapshot metadata."""
+        schedule_doc = self.task_scheduling_collection.find_one(
+            {"user_id": user_id}, sort=[("_id", -1)]
+        )
+        if not schedule_doc:
+            return {
+                "status": "missing",
+                "message": "No schedule found for user",
+                "user_id": user_id,
+                "sessions": [],
+            }
+
+        sessions = schedule_doc.get("sessions", [])
+        now = datetime.now()
+        upcoming_count = sum(
+            1
+            for s in sessions
+            if s.get("start_datetime") and s["start_datetime"] > now
+        )
+        completed_count = sum(
+            1 for s in sessions if s.get("end_datetime") and s["end_datetime"] < now
+        )
+
+        latest_snapshot = self.schedule_snapshots_collection.find_one(
+            {"user_id": user_id}, sort=[("created_at", -1)]
+        )
+
+        return {
+            "status": "ok",
+            "user_id": user_id,
+            "schedule_id": str(schedule_doc.get("_id")),
+            "schedule_state": schedule_doc.get("status", "active"),
+            "total_sessions": len(sessions),
+            "upcoming_sessions": upcoming_count,
+            "completed_sessions": completed_count,
+            "updated_at": schedule_doc.get("updated_at"),
+            "latest_snapshot": {
+                "reason": latest_snapshot.get("reason") if latest_snapshot else None,
+                "created_at": latest_snapshot.get("created_at") if latest_snapshot else None,
+            },
+            "sessions": sessions,
+        }
+
+    def optimize_schedule(self, user_id: str, reason: str = "manual_optimize") -> dict:
+        """Perform a lightweight schedule optimization by ordering sessions by start time."""
+        with self.client.start_session() as session:
+            with session.start_transaction():
+                schedule_doc = self.task_scheduling_collection.find_one(
+                    {"user_id": user_id}, sort=[("_id", -1)], session=session
+                )
+
+                if not schedule_doc:
+                    return {
+                        "status": "missing",
+                        "message": "No schedule found for user",
+                        "user_id": user_id,
+                    }
+
+                sessions = schedule_doc.get("sessions", [])
+                sorted_sessions = sorted(
+                    sessions,
+                    key=lambda s: s.get("start_datetime") or datetime.max,
+                )
+
+                self.task_scheduling_collection.update_one(
+                    {"_id": schedule_doc["_id"]},
+                    {
+                        "$set": {
+                            "sessions": sorted_sessions,
+                            "updated_at": datetime.now(),
+                        }
+                    },
+                    session=session,
+                )
+
+                self._persist_schedule_snapshot(
+                    user_id,
+                    schedule_doc.get("_id"),
+                    sorted_sessions,
+                    reason,
+                    datetime.now(),
+                    session=session,
+                )
+
+                return {
+                    "status": "ok",
+                    "message": "Schedule optimized",
+                    "user_id": user_id,
+                    "total_sessions": len(sorted_sessions),
+                }
+
     def _log_schedule_change(
         self,
         user_id: str,
@@ -443,3 +572,22 @@ class ScheduleOrchestrator:
             "timestamp": timestamp,
         }
         self.schedule_history_collection.insert_one(log_entry, session=session)
+
+    def _persist_schedule_snapshot(
+        self,
+        user_id: str,
+        schedule_id,
+        sessions: list,
+        reason: str,
+        timestamp: datetime,
+        session=None,
+    ):
+        """Persist a snapshot of schedule state for recovery and auditing."""
+        doc = {
+            "user_id": user_id,
+            "schedule_id": schedule_id,
+            "reason": reason,
+            "sessions": sessions,
+            "created_at": timestamp,
+        }
+        self.schedule_snapshots_collection.insert_one(doc, session=session)

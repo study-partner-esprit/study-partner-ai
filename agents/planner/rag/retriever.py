@@ -32,6 +32,7 @@ class ContentRetriever:
         self.embed_model = embed_model
         self.tokenizer = DocumentTokenizer(chunk_size=chunk_size, overlap=overlap)
         self.indexed_chunks = []  # Keep track of indexed document chunks
+        self.last_embeddings: Optional[np.ndarray] = None
 
     def add_precomputed_embeddings(
         self,
@@ -57,6 +58,7 @@ class ContentRetriever:
         vec_matrix = np.array(embeddings, dtype="float32")
         self.vector_store.add(vec_matrix, chunks)
         self.indexed_chunks.extend(chunks)
+        self.last_embeddings = vec_matrix
         logger.info(
             "retriever_precomputed_added",
             extra={"num_chunks": len(chunks)},
@@ -110,6 +112,7 @@ class ContentRetriever:
 
             # Track the chunks for later reference
             self.indexed_chunks.extend(chunks)
+            self.last_embeddings = chunk_embeddings
 
             return len(chunks)
 
