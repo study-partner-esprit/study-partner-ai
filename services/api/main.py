@@ -1432,16 +1432,12 @@ async def run_tests(req: TestRunRequest):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "services": {
-            "planner": get_planner_agent() is not None,
-            "coach": get_ai_orchestrator() is not None,
-            "signals": get_signal_service() is not None,
-            "scheduler": get_schedule_orchestrator() is not None,
-        },
-    }
+    """Health check endpoint - fast response for docker healthcheck.
+    
+    Does NOT initialize services to avoid timeouts during startup.
+    Services are lazy-loaded on first actual request.
+    """
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
