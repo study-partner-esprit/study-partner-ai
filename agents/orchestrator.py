@@ -14,6 +14,7 @@ from agents.scheduler.agent import SchedulerAgent, SchedulingContext
 from agents.scheduler.services.schedule_updater import ScheduleUpdater
 from agents.coach.agent import run_coach
 from agents.coach.models.schemas import CoachInput, FocusState
+from agents.evaluator.src.evaluator.evaluator_agent import EvaluatorAgent
 from models.task import Task
 from datetime import datetime, timedelta
 import uuid
@@ -151,11 +152,52 @@ def run_full_study_workflow(
     # Step 6: Run the scheduler
     print("📅 Scheduling study sessions...")
     scheduler = SchedulerAgent()
+    db = DatabaseService()
+    
+    # Generate calendar events from user's availability slots for the next 30 days
+    calendar_events = []
+    if user_id:
+        availability_slots = db.get_availability_slots(user_id)
+        current_date = datetime.now()
+        
+        # Map day names to weekday integers (0 = Monday, 6 = Sunday)
+        day_map = {
+            "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+            "Friday": 4, "Saturday": 5, "Sunday": 6
+        }
+        
+        for i in range(30):
+            check_date = current_date + timedelta(days=i)
+            check_weekday = check_date.weekday()
+            
+            for slot in availability_slots:
+                slot_weekday = day_map.get(slot.get("dayOfWeek"))
+                if slot_weekday == check_weekday:
+                    # Found a blocked slot for this day
+                    # Parse start and end times
+                    start_str = slot.get("startTime", "00:00")
+                    end_str = slot.get("endTime", "23:59")
+                    
+                    try:
+                        start_h, start_m = map(int, start_str.split(":"))
+                        end_h, end_m = map(int, end_str.split(":"))
+                        
+                        start_dt = check_date.replace(hour=start_h, minute=start_m, second=0, microsecond=0)
+                        end_dt = check_date.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+                        
+                        calendar_events.append({
+                            "start": start_dt.isoformat(),
+                            "end": end_dt.isoformat(),
+                            "title": slot.get("label", "Blocked")
+                        })
+                    except Exception as e:
+                        print(f"Warning: Could not parse time for slot {slot}: {e}")
 
-    # Create scheduling context with reasonable defaults
+    # Create scheduling context
     context = SchedulingContext(
-        calendar_events=[],  # No calendar conflicts for this demo
+        calendar_events=calendar_events,
         max_minutes_per_day=240,  # 4 hours per day
+        user_id=user_id
     )
 
     study_plan = scheduler.build_schedule(tasks, context)
@@ -337,3 +379,62 @@ def run_coaching_session(
     print(f"   Reasoning: {coach_action.reasoning}")
 
     return result
+
+
+def run_evaluation_step(
+    session_id: str = None,
+    task_id: str = None,
+    task_title: str = "",
+    task_description: str = "",
+    task_details: str = "",
+    student_answer: str = None,
+) -> dict:
+    """
+    Run an evaluation step to assess student mastery of a task.
+    This links the Evaluator Agent into the learning loop.
+
+    If session_id is None, it starts a new evaluation session for the task.
+    If student_answer is provided, it processes the answer.
+    """
+    evaluator = EvaluatorAgent()
+    
+    # We maintain sessions in the evaluator instance locally, but for a true 
+    # stateless orchestrator we would hydrate the session from the DB.
+    # For now, we assume the EvaluatorAgent manages its own session state in memory.
+    
+    if not session_id:
+        print(f"🎓 Starting new evaluation session for task: {task_title}")
+        result = evaluator.start_session(
+            task_title=task_title,
+            task_description=task_description,
+            task_details=task_details
+        )
+        return {
+            "action": "STARTED",
+            "session_id": result["session_id"],
+            "question": result["question"],
+        }
+    
+    if student_answer:
+        print(f"🎓 Evaluating student answer for session: {session_id}")
+        result = evaluator.handle_user_answer(session_id, student_answer)
+        
+        # Here we integrate with the scheduling loop based on the result
+        updater = ScheduleUpdater()
+        
+        if result.get("state") == "MASTERY_CONFIRMED":
+            print(f"✅ Student mastered the task! Moving to next task.")
+            # Spaced repetition & Adaptive Time Estimation
+            updater.handle_evaluation_result(task_id, task_title, result)
+            
+        elif result.get("state") == "FAILED":
+            print(f"❌ Student failed the task. Triggering reschedule...")
+            # Reschedule a review session
+            updater.handle_evaluation_result(task_id, task_title, result)
+            
+        elif result.get("state") == "CONTINUE":
+            print(f"🔄 Continuing evaluation...")
+            
+        return result
+    
+    return {"error": "Invalid parameters"}

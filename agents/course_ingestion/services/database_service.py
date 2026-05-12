@@ -13,11 +13,13 @@ DB_NAME = os.getenv("DB_NAME", "study_partner")
 COLLECTION_NAME = "courses"  # AI-processed courses
 STUDY_PLAN_COLLECTION = "studyplans"  # Match Mongoose pluralization
 TASK_SCHEDULING_COLLECTION = "task_scheduling"
+EVALUATION_SESSIONS_COLLECTION = "evaluation_sessions"
 
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 study_plan_collection = db[STUDY_PLAN_COLLECTION]
+evaluation_sessions_collection = db[EVALUATION_SESSIONS_COLLECTION]
 
 
 class DatabaseService:
@@ -29,6 +31,7 @@ class DatabaseService:
         self.collection = self.db[COLLECTION_NAME]
         self.study_plan_collection = self.db[STUDY_PLAN_COLLECTION]
         self.task_scheduling_collection = self.db[TASK_SCHEDULING_COLLECTION]
+        self.evaluation_sessions_collection = self.db[EVALUATION_SESSIONS_COLLECTION]
 
     def save_course(self, course: dict):
         """
@@ -117,3 +120,19 @@ class DatabaseService:
         }
         result = self.task_scheduling_collection.insert_one(doc)
         return str(result.inserted_id)
+
+    def save_evaluation_session(self, session_data: dict) -> str:
+        """Save an evaluation session state."""
+        session_id = session_data.get("session_id")
+        self.evaluation_sessions_collection.replace_one(
+            {"session_id": session_id}, session_data, upsert=True
+        )
+        return session_id
+
+    def get_evaluation_session(self, session_id: str) -> dict:
+        """Get an evaluation session state."""
+        return self.evaluation_sessions_collection.find_one({"session_id": session_id})
+
+    def get_availability_slots(self, user_id: str) -> list:
+        """Get all availability slots (blocked times) for a user."""
+        return list(self.db["availabilityslots"].find({"userId": user_id}))

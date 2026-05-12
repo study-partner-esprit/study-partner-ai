@@ -168,3 +168,105 @@ class ScheduleUpdater:
         self.collection.replace_one({"_id": doc["_id"]}, doc)
         print(f"Suspended study session until tomorrow ({change.reasoning})")
         return True
+
+    def handle_evaluation_result(self, task_id: str, task_title: str, eval_result: dict) -> bool:
+        """
+        Adjust schedule based on evaluation results from EvaluatorAgent.
+        Implements:
+        1. Rescheduling failed tasks (Review session)
+        2. Spaced repetition for mastered tasks
+        3. Adaptive time estimation
+        """
+        doc = self.collection.find_one(sort=[("_id", -1)])
+        if not doc:
+            return False
+
+        sessions = doc.get("sessions", [])
+        state = eval_result.get("state")
+        attempts = eval_result.get("attempts", 1)
+        current_time = datetime.now()
+
+        if state == "FAILED":
+            # 1. Reschedule the failed task immediately
+            print(f"🔄 Rescheduling failed task: {task_title}")
+            review_session = {
+                "task_id": f"review_{task_id}_{int(current_time.timestamp())}",
+                "title": f"Review: {task_title}",
+                "start_datetime": current_time.isoformat(),
+                "end_datetime": (current_time + timedelta(minutes=30)).isoformat(),
+                "break_after_minutes": 5,
+                "slot_score": 1.0,
+                "scheduled": True,
+                "is_review": True
+            }
+            
+            # Find the index of the first future session to insert before it
+            insert_idx = len(sessions)
+            for i, s in enumerate(sessions):
+                if isinstance(s["start_datetime"], str):
+                    st = datetime.fromisoformat(s["start_datetime"])
+                else:
+                    st = s["start_datetime"]
+                if st > current_time:
+                    insert_idx = i
+                    break
+            
+            sessions.insert(insert_idx, review_session)
+            
+            # Shift subsequent sessions
+            for i in range(insert_idx + 1, len(sessions)):
+                session = sessions[i]
+                if isinstance(session["start_datetime"], str):
+                    st = datetime.fromisoformat(session["start_datetime"])
+                    et = datetime.fromisoformat(session["end_datetime"])
+                else:
+                    st = session["start_datetime"]
+                    et = session["end_datetime"]
+                
+                session["start_datetime"] = (st + timedelta(minutes=30)).isoformat()
+                session["end_datetime"] = (et + timedelta(minutes=30)).isoformat()
+
+            self.collection.replace_one({"_id": doc["_id"]}, doc)
+            return True
+
+        elif state == "MASTERY_CONFIRMED":
+            # 2. Spaced repetition: schedule a recap in 2 days
+            print(f"📅 Scheduling spaced repetition recap for: {task_title}")
+            recap_time = current_time + timedelta(days=2)
+            recap_session = {
+                "task_id": f"recap_{task_id}_{int(current_time.timestamp())}",
+                "title": f"Spaced Repetition: {task_title}",
+                "start_datetime": recap_time.isoformat(),
+                "end_datetime": (recap_time + timedelta(minutes=15)).isoformat(),
+                "break_after_minutes": 5,
+                "slot_score": 0.8,
+                "scheduled": True,
+                "is_recap": True
+            }
+            sessions.append(recap_session)
+
+            # 3. Adaptive Time Estimation
+            # If they struggled (e.g., took many attempts to pass), increase future task durations slightly
+            if attempts >= 3:
+                print(f"⏱️ Student struggled with {task_title}. Adapting future task durations.")
+                for s in sessions:
+                    if s.get("is_review") or s.get("is_recap") or s.get("task_id") == task_id:
+                        continue
+                    
+                    # Increase future task duration by 10%
+                    if isinstance(s["start_datetime"], str):
+                        st = datetime.fromisoformat(s["start_datetime"])
+                        et = datetime.fromisoformat(s["end_datetime"])
+                    else:
+                        st = s["start_datetime"]
+                        et = s["end_datetime"]
+                    
+                    if st > current_time:
+                        dur = et - st
+                        new_dur = dur + timedelta(minutes=int(dur.total_seconds() / 60 * 0.1))
+                        s["end_datetime"] = (st + new_dur).isoformat()
+            
+            self.collection.replace_one({"_id": doc["_id"]}, doc)
+            return True
+
+        return False

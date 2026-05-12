@@ -2,6 +2,8 @@
 
 AI-powered study assistance system using multi-agent architecture.
 
+This service was developed as part of the **PIDEV – 3rd Year Engineering Program** at **Esprit School of Engineering** (Academic Year 2025–2026).
+
 ## Architecture
 
 This service implements a multi-agent system with:
