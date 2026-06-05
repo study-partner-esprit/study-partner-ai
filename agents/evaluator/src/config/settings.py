@@ -4,8 +4,8 @@
 import os
 from pathlib import Path
 
-# Google Gemini API Key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyAdvG4V9kEktHPlxfhlHwxG_I7xlE3Fs08")
+# Google Gemini API Key (set via GEMINI_API_KEY env var)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or ""
 
 # GPT4All settings
 GPT4ALL_MODEL_NAME = "orca-mini-3b-gguf2-q4_0"  # Smaller, faster model

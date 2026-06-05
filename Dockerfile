@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages that aren't in the base image
+# Install Python packages
 RUN pip install --no-cache-dir \
     fastapi \
     uvicorn \
@@ -23,7 +23,6 @@ RUN pip install --no-cache-dir \
     requests \
     PyMuPDF \
     pillow \
-    sentence-transformers \
     faiss-cpu \
     scikit-learn \
     pytesseract \
@@ -38,31 +37,18 @@ RUN pip install --no-cache-dir \
     opencv-python \
     mediapipe \
     python-multipart \
-    # Search agent deps \
     flask \
     beautifulsoup4 \
     apify-client \
     SpeechRecognition \
     pyttsx3 \
-    # Testing toolchain \
     pytest \
     pytest-asyncio \
     pytest-json-report \
     httpx \
-    anyio
-
-# Install poetry for dependency management
-RUN pip install --no-cache-dir poetry poetry-plugin-export
-
-# Copy dependency files first (for Docker layer caching)
-COPY pyproject.toml poetry.lock* ./
-
-# Configure poetry to not create virtual env (we're already in a container)
-RUN poetry config virtualenvs.create false
-
-# Install any additional dependencies from poetry (if needed)
-RUN poetry install --no-root --no-dev --no-interaction --no-ansi \
-    && pip uninstall -y torch torchvision torchaudio 2>/dev/null || true
+    anyio \
+    "transformers>=4.38.0,<4.45.0" \
+    "sentence-transformers>=2.5.0,<2.8.0"
 
 # Copy application code
 COPY . .
