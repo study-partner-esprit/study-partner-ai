@@ -12,9 +12,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Model paths — prefer transfer-learned model, fall back to original
+# Model paths — check existing model files
 _SERVICE_DIR = Path(__file__).parent
-_MODEL_TRANSFER = _SERVICE_DIR / "focus_model_transfer.h5"
 _MODEL_ORIGINAL = _SERVICE_DIR / "focus_model.h5"
 _MODEL_OUTPUTS = _SERVICE_DIR.parent.parent / "ML" / "focus" / "outputs" / "models"
 
@@ -37,9 +36,7 @@ class FocusDetector:
     def _resolve_model_path(self) -> Optional[Path]:
         """Find the best available model file."""
         candidates = [
-            _MODEL_TRANSFER,
             _MODEL_ORIGINAL,
-            _MODEL_OUTPUTS / "focus_model_transfer.h5",
             _MODEL_OUTPUTS / "focus_model.h5",
         ]
         for p in candidates:

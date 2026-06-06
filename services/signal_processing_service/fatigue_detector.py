@@ -148,14 +148,25 @@ class FatigueDetector:
 
 
 # ------------------------------------------------------------------
-# Singleton accessor
+# Per-user session registry
 # ------------------------------------------------------------------
-_fatigue_detector: Optional[FatigueDetector] = None
+_fatigue_registry: dict[str, FatigueDetector] = {}
 
 
-def get_fatigue_detector() -> FatigueDetector:
-    """Get or create the global fatigue detector instance."""
-    global _fatigue_detector
-    if _fatigue_detector is None:
-        _fatigue_detector = FatigueDetector()
-    return _fatigue_detector
+def get_fatigue_detector(user_id: str = "default") -> FatigueDetector:
+    """Get or create a fatigue detector instance for a specific user.
+    
+    This maintains per-user state (blink/yawn counts) across API calls.
+    """
+    global _fatigue_registry
+    if user_id not in _fatigue_registry:
+        _fatigue_registry[user_id] = FatigueDetector()
+    return _fatigue_registry[user_id]
+
+
+def reset_fatigue_detector(user_id: str = "default"):
+    """Reset the fatigue detector for a specific user (e.g., new session)."""
+    global _fatigue_registry
+    if user_id in _fatigue_registry:
+        _fatigue_registry[user_id].adapter.reset()
+        del _fatigue_registry[user_id]

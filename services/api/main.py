@@ -779,9 +779,9 @@ async def analyze_frame(user_id: str = Form(...), frame: UploadFile = File(...))
         # Read frame data
         frame_data = await frame.read()
 
-        # Run both detectors
+        # Run both detectors (per-user fatigue detector for state persistence)
         focus_detector = get_focus_detector()
-        fatigue_detector = get_fatigue_detector()
+        fatigue_detector = get_fatigue_detector(user_id)
 
         focus_result = focus_detector.analyze_frame(frame_data)
         fatigue_result = fatigue_detector.analyze_frame(frame_data)
@@ -1107,9 +1107,9 @@ async def optimize_schedule(request: SchedulerOptimizeRequest):
 async def evaluate_session(request: EvaluateSessionRequest):
     """Evaluate a completed study session and return coaching-quality feedback."""
     try:
-        from agents.evaluator.agent import EvaluatorAgent
+        from agents.evaluator.src.evaluator.evaluator_agent import EvaluatorAgent
 
-        evaluator = EvaluatorAgent()
+        evaluator = EvaluatorAgent(require_llm=False)
         evaluation = evaluator.evaluate(
             session_duration_minutes=request.session_duration_minutes,
             focus_score=request.focus_score,
@@ -1119,7 +1119,7 @@ async def evaluate_session(request: EvaluateSessionRequest):
         return {
             "status": "ok",
             "user_id": request.user_id,
-            "evaluation": evaluation.as_dict(),
+            "evaluation": evaluation.model_dump(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1145,6 +1145,85 @@ async def calibrate_signals(request: CalibrateSignalsRequest):
         # Seed with baseline
         ema.update(request.user_id, request.baseline_focus, request.baseline_fatigue)
         return {"status": "ok", "user_id": request.user_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class FatigueResetRequest(BaseModel):
+    user_id: str
+
+
+@app.post("/api/ai/signals/fatigue/reset")
+async def reset_fatigue(request: FatigueResetRequest):
+    """
+    Reset the per-user fatigue detector state (blink/yawn counters).
+    Call at the start of a new study session.
+    """
+    try:
+        from services.signal_processing_service.fatigue_detector import (
+            reset_fatigue_detector,
+        )
+
+        reset_fatigue_detector(request.user_id)
+        return {"status": "ok", "user_id": request.user_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Socratic Evaluation Endpoints ====================
+
+
+class SocraticStartRequest(BaseModel):
+    user_id: str
+    task_title: str
+    task_description: str
+    task_details: str
+    max_attempts: int = 5
+
+
+class SocraticAnswerRequest(BaseModel):
+    session_id: str
+    user_answer: str
+
+
+@app.post("/api/ai/evaluator/socratic/start")
+async def socratic_start(request: SocraticStartRequest):
+    """
+    Start a new Socratic evaluation session.
+    Returns the first question to ask the student.
+    """
+    try:
+        from agents.evaluator.src.evaluator.evaluator_agent import EvaluatorAgent
+
+        evaluator = EvaluatorAgent(require_llm=False)
+        result = evaluator.start_session(
+            task_title=request.task_title,
+            task_description=request.task_description,
+            task_details=request.task_details,
+            max_attempts=request.max_attempts,
+        )
+        return {
+            "status": "ok",
+            "user_id": request.user_id,
+            "session_id": result["session_id"],
+            "question": result["question"],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ai/evaluator/socratic/answer")
+async def socratic_answer(request: SocraticAnswerRequest):
+    """
+    Submit a student answer to an ongoing Socratic evaluation session.
+    Returns the next question or final evaluation result.
+    """
+    try:
+        from agents.evaluator.src.evaluator.evaluator_agent import EvaluatorAgent
+
+        evaluator = EvaluatorAgent(require_llm=False)
+        result = evaluator.handle_user_answer(request.session_id, request.user_answer)
+        return {"status": "ok", **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

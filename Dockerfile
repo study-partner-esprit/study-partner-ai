@@ -3,6 +3,8 @@ FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 WORKDIR /app
 
+ENV PYTHONPATH=/app:/app/agents/evaluator/src
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
@@ -20,6 +22,7 @@ RUN pip install --no-cache-dir \
     pydantic \
     python-dotenv \
     google-generativeai \
+    google-genai \
     requests \
     PyMuPDF \
     pillow \

@@ -27,6 +27,10 @@ from src.evaluator.schemas import (
     TaskEvaluationContext,
     EvaluationSession,
     SessionState,
+    EvaluationState,
+    RewardPayload,
+    ReschedulePayload,
+    EvaluationResult,
 )
 from src.evaluator.scoring import MasteryScorer
 from src.evaluator.reward_engine import RewardEngine
@@ -37,24 +41,36 @@ logger = logging.getLogger(__name__)
 class EvaluatorAgent:
     """Main Socratic evaluation orchestrator."""
     
-    def __init__(self, llm_client: Optional[GeminiClient] = None):
+    def __init__(self, llm_client: Optional[GeminiClient] = None, require_llm: bool = True):
         """
         Initialize evaluator agent.
         
         Args:
-            llm_client: Optional pre-initialized GeminiClient. If None, creates new instance.
+            llm_client: Optional pre-initialized GeminiClient. If None and require_llm=True, creates new instance.
+            require_llm: If True (default), requires GeminiClient for Socratic evaluation. 
+                         If False, allows initialization without LLM for post-session evaluation only.
         
         Examples:
-            # Use default Gemini client
+            # Use default Gemini client (requires GEMINI_API_KEY)
             agent = EvaluatorAgent()
             
             # Use custom Gemini client
             from src.evaluator.llm_client import GeminiClient
             agent = EvaluatorAgent(llm_client=GeminiClient())
+            
+            # Post-session evaluation only (no LLM needed)
+            agent = EvaluatorAgent(require_llm=False)
         """
         try:
-            self.llm = llm_client or GeminiClient()
-            logger.info(f"✓ Using GeminiClient for evaluation")
+            if llm_client is not None:
+                self.llm = llm_client
+                logger.info(f"✓ Using provided GeminiClient for evaluation")
+            elif require_llm:
+                self.llm = GeminiClient()
+                logger.info(f"✓ Using GeminiClient for evaluation")
+            else:
+                self.llm = None
+                logger.info(f"✓ Initialized without LLM (post-session evaluation mode)")
             
             # Initialize session storage and scoring
             self.db = DatabaseService()
@@ -284,26 +300,38 @@ class EvaluatorAgent:
         
         # First question: use Gemini API with template fallback
         if session.attempts == 0:
-            logger.info(f"[{session.session_id}] Generating FIRST question via Gemini API (with template fallback)")
-            prompt = build_question_prompt(
-                task_title=session.task_title,
-                task_description=session.task_description,
-                task_details=session.task_details,
-                key_concepts=session.context.key_concepts,
-                depth_level=session.depth_level,
-            )
-            question = self.llm.generate_question(
-                prompt=prompt,
-                max_tokens=200,
-                depth_level=session.depth_level,
-                key_concepts=session.context.key_concepts,
-                task_title=session.task_title,
-                task_details=session.task_details,
-                attempt_number=1
-            )
-            question = validate_question(question)
-            if has_generic_question_terms(question) or not question_contains_concept(question, session.context.key_concepts):
-                logger.warning(f"[{session.session_id}] First question failed validation, regenerating locally.")
+            if self.llm is not None:
+                logger.info(f"[{session.session_id}] Generating FIRST question via Gemini API (with template fallback)")
+                prompt = build_question_prompt(
+                    task_title=session.task_title,
+                    task_description=session.task_description,
+                    task_details=session.task_details,
+                    key_concepts=session.context.key_concepts,
+                    depth_level=session.depth_level,
+                )
+                question = self.llm.generate_question(
+                    prompt=prompt,
+                    max_tokens=200,
+                    depth_level=session.depth_level,
+                    key_concepts=session.context.key_concepts,
+                    task_title=session.task_title,
+                    task_details=session.task_details,
+                    attempt_number=1
+                )
+                question = validate_question(question)
+                if has_generic_question_terms(question) or not question_contains_concept(question, session.context.key_concepts):
+                    logger.warning(f"[{session.session_id}] First question failed validation, regenerating locally.")
+                    question = generate_template_question(
+                        depth_level=session.depth_level,
+                        key_concepts=session.context.key_concepts,
+                        task_title=session.task_title,
+                        task_details=session.task_details,
+                        attempt_number=1
+                    )
+                    logger.debug(f"[{session.session_id}] Regenerated first question accepted: {question}")
+            else:
+                # No LLM available - use template directly
+                logger.info(f"[{session.session_id}] Generating FIRST question via template (no LLM)")
                 question = generate_template_question(
                     depth_level=session.depth_level,
                     key_concepts=session.context.key_concepts,
@@ -311,7 +339,6 @@ class EvaluatorAgent:
                     task_details=session.task_details,
                     attempt_number=1
                 )
-                logger.debug(f"[{session.session_id}] Regenerated first question accepted: {question}")
         
         # Follow-up questions: use local templates (no API call)
         else:
@@ -398,6 +425,33 @@ class EvaluatorAgent:
             f"for question: '{student_question[:60]}...'"
         )
 
+        if self.llm is None:
+            # No LLM available - use concept coverage only
+            logger.info(f"[{session.session_id}] Analyzing answer using concept coverage only (no LLM)")
+            local_concept_score = concept_coverage(student_answer, session.context.key_concepts)
+            last_valid_score = getattr(session, 'mastery_score', 0.5) or 0.5
+            
+            fallback_analysis = LLMAnalysisResponse(
+                concept_coverage=local_concept_score,
+                logical_coherence=0.5,
+                causal_reasoning=0.5,
+                error_awareness=0.5,
+                answer_feedback=f"Based on your answer, you covered {int(local_concept_score * 100)}% of key concepts.",
+                guessing_detected=False,
+                missing_concepts=[
+                    concept for concept in session.context.key_concepts
+                    if concept.lower() not in student_answer.lower()
+                ],
+                misconceptions=[],
+            )
+            
+            mastery_score = self.scorer.compute_mastery_score(
+                fallback_analysis,
+                concept_score=local_concept_score,
+                last_valid_score=last_valid_score
+            )
+            return fallback_analysis, mastery_score
+        
         try:
             # Generate plain text analysis from Gemini (reduced tokens to minimize API usage)
             feedback_text = self.llm.generate(prompt, max_tokens=150)
@@ -523,3 +577,93 @@ class EvaluatorAgent:
             logger.info(f"Deleted session {session_id}")
             return True
         return False
+
+    def evaluate(
+        self,
+        session_duration_minutes: int,
+        focus_score: float,
+        completed_tasks: int,
+        skipped_tasks: int,
+    ) -> EvaluationResult:
+        """
+        Evaluate a completed study session based on metrics.
+        
+        Args:
+            session_duration_minutes: Duration of the study session
+            focus_score: Average focus score (0-100)
+            completed_tasks: Number of tasks completed
+            skipped_tasks: Number of tasks skipped
+            
+        Returns:
+            EvaluationResult with level and score
+        """
+        total_tasks = completed_tasks + skipped_tasks
+        completion_rate = completed_tasks / total_tasks if total_tasks > 0 else 0.0
+        
+        focus_normalized = focus_score / 100.0
+        
+        duration_score = min(session_duration_minutes / 60.0, 1.0)
+        
+        weighted_score = (
+            0.4 * completion_rate +
+            0.35 * focus_normalized +
+            0.25 * duration_score
+        )
+        
+        score_100 = round(weighted_score * 100)
+        
+        if score_100 >= 85:
+            level = "excellent"
+        elif score_100 >= 70:
+            level = "good"
+        elif score_100 >= 50:
+            level = "fair"
+        else:
+            level = "needs_improvement"
+        
+        feedback_parts = []
+        if completion_rate >= 0.8:
+            feedback_parts.append("Great job completing most of your tasks!")
+        elif completion_rate >= 0.5:
+            feedback_parts.append("You completed some tasks, but consider reducing the scope.")
+        else:
+            feedback_parts.append("Low task completion rate. Try breaking tasks into smaller pieces.")
+            
+        if focus_normalized >= 0.75:
+            feedback_parts.append("Excellent focus throughout the session.")
+        elif focus_normalized >= 0.5:
+            feedback_parts.append("Focus was moderate. Try minimizing distractions.")
+        else:
+            feedback_parts.append("Focus was low. Consider shorter sessions with breaks.")
+        
+        feedback = " ".join(feedback_parts)
+        
+        state = EvaluationState.MASTERY_CONFIRMED if score_100 >= 70 else EvaluationState.FAILED
+        
+        reward = None
+        if state == EvaluationState.MASTERY_CONFIRMED:
+            xp = int(score_100 * 1.5)
+            reward = RewardPayload(
+                learning_points=xp,
+                streak_increment=1,
+                concepts_covered=[]
+            )
+        
+        reschedule = None
+        if state == EvaluationState.FAILED:
+            reschedule = ReschedulePayload(
+                action="REVIEW",
+                reason="Session score below threshold. Review recommended.",
+                weak_concepts=["focus", "task_completion"],
+                misconceptions=[]
+            )
+        
+        return EvaluationResult(
+            state=state,
+            mastery_score=weighted_score,
+            questions_asked=0,
+            feedback=feedback,
+            next_question=None,
+            reward=reward,
+            reschedule=reschedule
+        )
