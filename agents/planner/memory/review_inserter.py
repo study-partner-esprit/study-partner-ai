@@ -368,6 +368,9 @@ class ReviewInserter:
                 "overdue": 0,
                 "completed": 0,
                 "avg_quality": 0,
+                "totalReviewed": 0,
+                "averageQuality": 0,
+                "masteredCount": 0,
             }
 
         try:
@@ -393,6 +396,12 @@ class ReviewInserter:
                 {
                     "user_id": user_id,
                     "status": "completed",
+                }
+            )
+            mastered = collection.count_documents(
+                {
+                    "user_id": user_id,
+                    "review_number": {"$gte": 4},
                 }
             )
 
@@ -423,6 +432,9 @@ class ReviewInserter:
                 "overdue": overdue,
                 "completed": completed,
                 "avg_quality": avg_quality,
+                "totalReviewed": completed,
+                "averageQuality": avg_quality,
+                "masteredCount": mastered,
             }
 
         except Exception as exc:
@@ -433,6 +445,9 @@ class ReviewInserter:
                 "overdue": 0,
                 "completed": 0,
                 "avg_quality": 0,
+                "totalReviewed": 0,
+                "averageQuality": 0,
+                "masteredCount": 0,
             }
 
     # ------------------------------------------------------------------ #
