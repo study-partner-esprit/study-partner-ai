@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 # MongoDB
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
-MONGO_DB = os.getenv("MONGO_DB", "reflection_db")
+MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+MONGO_DB = os.getenv("DB_NAME", "study_partner")
 
 # Groq LLM
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")

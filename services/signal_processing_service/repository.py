@@ -20,7 +20,7 @@ class SignalRepository:
     def __init__(self):
         """Initialize MongoDB connection."""
         mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
-        db_name = os.getenv("MONGO_DB_NAME", "study_partner")
+        db_name = os.getenv("DB_NAME", "study_partner")
 
         self.client = MongoClient(mongo_uri)
         self.db = self.client[db_name]

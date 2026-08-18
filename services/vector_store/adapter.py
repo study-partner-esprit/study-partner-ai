@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 import numpy as np
 import faiss
 from pathlib import Path
@@ -31,6 +32,16 @@ logger = get_logger(__name__)
 
 FAISS_INDEX_DIR = Path(os.getenv("FAISS_INDEX_DIR", "/tmp/study_partner_faiss"))
 CHUNK_EMBED_COLLECTION = "chunk_embeddings"
+
+# course_id is used to build filesystem paths (<id>.faiss) — restrict to a
+# safe charset to prevent path traversal.
+_COURSE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
+
+
+def validate_course_id(course_id: str) -> str:
+    if not isinstance(course_id, str) or not _COURSE_ID_RE.match(course_id):
+        raise ValueError(f"Invalid course_id: {course_id!r}")
+    return course_id
 
 
 class VectorStoreAdapter:
@@ -83,6 +94,7 @@ class VectorStoreAdapter:
         if len(chunks) != len(embeddings):
             raise ValueError("chunks and embeddings must have the same length")
 
+        validate_course_id(course_id)
         metadatas = metadatas or [{} for _ in chunks]
         n = len(chunks)
 
@@ -142,6 +154,7 @@ class VectorStoreAdapter:
         Returns:
             List of dicts with keys: chunk, score, meta, rank.
         """
+        validate_course_id(course_id)
         entry = self._ensure_loaded(course_id)
         if entry is None:
             return []
@@ -186,6 +199,7 @@ class VectorStoreAdapter:
 
     def delete_course(self, course_id: str) -> None:
         """Remove the FAISS index from memory and disk."""
+        validate_course_id(course_id)
         self._indices.pop(course_id, None)
         index_path = FAISS_INDEX_DIR / f"{course_id}.faiss"
         meta_path = FAISS_INDEX_DIR / f"{course_id}.meta.json"

@@ -51,7 +51,8 @@ def apify_web_search(query, max_results=5, wait_timeout=12):
         print("❌ APIFY_API_KEY not found")
         return []
 
-    url = f"https://api.apify.com/v2/acts/apify~google-search-scraper/runs?token={apify_api_key}"
+    headers = {"Authorization": f"Bearer {apify_api_key}"}
+    url = "https://api.apify.com/v2/acts/apify~google-search-scraper/runs"
     payload = {
         "queries": query,
         "maxPagesPerQuery": 1,
@@ -59,7 +60,7 @@ def apify_web_search(query, max_results=5, wait_timeout=12):
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=5)
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
         if response.status_code not in [200, 201]:
             print(f"❌ Error response: {response.text}")
             return []
@@ -72,13 +73,11 @@ def apify_web_search(query, max_results=5, wait_timeout=12):
         if not run_id:
             return []
 
-        run_status_url = (
-            f"https://api.apify.com/v2/actor-runs/{run_id}?token={apify_api_key}"
-        )
+        run_status_url = f"https://api.apify.com/v2/actor-runs/{run_id}"
         start_time = time.time()
 
         while time.time() - start_time < wait_timeout:
-            status_response = requests.get(run_status_url, timeout=5)
+            status_response = requests.get(run_status_url, headers=headers, timeout=5)
             status_response.raise_for_status()
             status_data = status_response.json()
             status = status_data.get("data", {}).get("status")
@@ -86,8 +85,8 @@ def apify_web_search(query, max_results=5, wait_timeout=12):
                 dataset_id = status_data.get("data", {}).get("defaultDatasetId")
                 if not dataset_id:
                     return []
-                dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items?token={apify_api_key}"
-                dataset_response = requests.get(dataset_url, timeout=5)
+                dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items"
+                dataset_response = requests.get(dataset_url, headers=headers, timeout=5)
                 dataset_response.raise_for_status()
                 items = dataset_response.json()
                 urls = []

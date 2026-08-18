@@ -11,11 +11,11 @@ class SchedulingService:
 
     def __init__(self):
         mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
-        db_name = os.getenv("MONGO_DB_NAME", "study_partner")
+        db_name = os.getenv("DB_NAME", "study_partner")
 
         self.client = MongoClient(mongo_uri)
         self.db = self.client[db_name]
-        self.study_plan_collection = self.db["study_plans"]
+        self.study_plan_collection = self.db["studyplans"]
         self.task_scheduling_collection = self.db["task_scheduling"]
 
     def save_study_plan(self, user_id: str, study_plan: dict) -> str:
