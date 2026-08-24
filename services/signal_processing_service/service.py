@@ -147,13 +147,3 @@ class SignalProcessingService:
             The latest SignalSnapshot, or None if none exists
         """
         return self.repository.get_latest_signal_snapshot(user_id)
-
-    def is_ready(self) -> bool:
-        """
-        Check if the service is ready (all models loaded).
-
-        Returns:
-            True if all components are ready, False otherwise
-        """
-        # For now, we're OK with running even if models aren't loaded (using mocks)
-        return True
