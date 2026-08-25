@@ -42,6 +42,7 @@ from messaging.topology import (
     dlq_queue_name,
     delay_queue_name,
     delay_queue_arguments,
+    retry_routing_key,
     work_queue_arguments,
     work_queue_name,
 )
@@ -110,10 +111,15 @@ class BaseAIWorker:
         await dlq.bind(EXCHANGE_DLX, routing_key=self.job_type)
 
         for delay in RETRY_DELAYS_MS:
+            qname = delay_queue_name(self.job_type, delay)
             dq = await self._channel.declare_queue(
-                delay_queue_name(delay), durable=True, arguments=delay_queue_arguments(delay)
+                qname, durable=True, arguments=delay_queue_arguments(delay)
             )
-            await dq.bind(EXCHANGE_DELAY, routing_key=str(delay))
+            rk = retry_routing_key(self.job_type, delay)
+            await dq.bind(EXCHANGE_DELAY, routing_key=rk)
+            # Extra binding: expired messages keep routing_key = retry key,
+            # so the work queue must accept it.
+            await queue.bind(EXCHANGE_JOBS, routing_key=rk)
 
         self._consumer_tag = await queue.consume(self.on_message)
         logger.info("worker_started", extra={"job_type": self.job_type})
@@ -160,8 +166,13 @@ class BaseAIWorker:
             self._in_flight = asyncio.current_task()
             try:
                 result_payload = await self.handle(envelope.payload, envelope)
+            except _RetryScheduled:
+                return  # original ACKed; the delayed copy continues the lifecycle
             except Exception as exc:
-                await self._on_failure(message, envelope, exc)
+                try:
+                    await self._on_failure(message, envelope, exc)
+                except _RetryScheduled:
+                    return  # swallowed; acked inside _on_failure
                 return
             finally:
                 self._in_flight = None
@@ -215,6 +226,7 @@ class BaseAIWorker:
         headers[RETRY_HEADER] = next_attempt
         headers["x-last-failure"] = reason[:256]
         delay_exchange = await self._channel.get_exchange(EXCHANGE_DELAY)
+        rk = retry_routing_key(envelope.type, delay_ms)
         await delay_exchange.publish(
             aio_pika.Message(
                 body=message.body,
@@ -224,9 +236,9 @@ class BaseAIWorker:
                 message_id=envelope.messageId,
                 correlation_id=envelope.correlationId,
             ),
-            routing_key=str(delay_ms),
+            routing_key=rk,
         )
-        message.ack()  # original consumed; delayed copy continues the lifecycle
+        await message.ack()  # original consumed; delayed copy continues
         raise _RetryScheduled()
 
     async def _publish_result(

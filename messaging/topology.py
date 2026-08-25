@@ -17,7 +17,25 @@ EXCHANGE_RESULTS = "ai.results"
 
 RESULT_QUEUE = "ai.results.inbox"
 
-RETRY_DELAYS_MS: List[int] = [1000, 4000, 16000]
+def _retry_delays() -> List[int]:
+    """Env override exists for integration tests (tiny delays); production
+    uses the canonical 1s → 4s → 16s ladder."""
+    import json as _json
+
+    raw = os.getenv("AI_RETRY_DELAYS_MS")
+    if not raw:
+        return [1000, 4000, 16000]
+    parsed = _json.loads(raw)
+    if (
+        not isinstance(parsed, list)
+        or not parsed
+        or not all(isinstance(n, int) and n > 0 for n in parsed)
+    ):
+        raise ValueError("AI_RETRY_DELAYS_MS must be a JSON array of positive integers")
+    return parsed
+
+
+RETRY_DELAYS_MS: List[int] = _retry_delays()
 MAX_RETRIES = len(RETRY_DELAYS_MS)
 
 RETRY_HEADER = "x-retry-count"
@@ -37,10 +55,15 @@ def dlq_queue_name(job_type: str) -> str:
     return f"ai.dlq.{job_type}"
 
 
-def delay_queue_name(delay_ms: int) -> str:
-    if delay_ms in RETRY_DELAYS_MS:
-        return f"ai.delay.{delay_ms // 1000}s"
-    return f"ai.delay.{delay_ms}ms"
+def delay_queue_name(job_type: str, delay_ms: int) -> str:
+    return f"ai.delay.{job_type}.{delay_ms}"
+
+
+def retry_routing_key(job_type: str, delay_ms: int) -> str:
+    """Routing key under which a delayed retry is published.  The same key is
+    bound from the jobs exchange to the work queue so expired messages land
+    back on the correct work queue."""
+    return f"retry.{job_type}.{delay_ms}"
 
 
 def work_queue_arguments() -> Dict[str, Any]:
@@ -49,9 +72,9 @@ def work_queue_arguments() -> Dict[str, Any]:
 
 
 def delay_queue_arguments(delay_ms: int) -> Dict[str, Any]:
-    """Delay queues expire then re-route to their original work queue:
-    dead-lettering preserves the original routing key (= job type), and the
-    DLX here is the jobs exchange itself."""
+    """Delay queues: message expires → dead-letters to ai.jobs with the
+    CURRENT routing key (= retry.<type>.<ms>), which is bound from the
+    jobs exchange to the work queue."""
     return {
         "x-message-ttl": delay_ms,
         "x-dead-letter-exchange": EXCHANGE_JOBS,

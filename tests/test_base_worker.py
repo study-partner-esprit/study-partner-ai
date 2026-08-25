@@ -13,7 +13,7 @@ import uuid
 import pytest
 
 from messaging.failures import RetryableError, TerminalError, classify_failure
-from workers.base import BaseAIWorker, _RetryScheduled
+from workers.base import BaseAIWorker
 from workers.idempotency import InMemoryIdempotencyStore
 
 
@@ -127,11 +127,9 @@ async def test_retryable_failure_republishes_to_first_delay(worker):
         published["next"] = next_attempt
         published["delay"] = delay_ms
         message.ack()
-        raise _RetryScheduled()
 
     worker._republish_for_retry = fake_republish
-    with pytest.raises(_RetryScheduled):
-        await consume(worker, msg)
+    await consume(worker, msg)
 
     assert published == {"next": 1, "delay": 1000}
     assert msg.acked

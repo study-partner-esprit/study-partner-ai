@@ -34,8 +34,9 @@ def test_queues_and_naming_match_fixture():
     naming = fx["naming"]
     assert t.work_queue_name("study.plan.generate") == naming["sampleWorkQueue"]
     assert t.dlq_queue_name("study.plan.generate") == naming["sampleDlq"]
-    assert t.delay_queue_name(1000) == naming["sampleDelayQueue1000"]
-    assert t.delay_queue_name(16000) == naming["sampleDelayQueue16000"]
+    assert t.delay_queue_name("study.plan.generate", 1000) == naming["sampleDelayQueue1000"]
+    assert t.delay_queue_name("study.plan.generate", 16000) == naming["sampleDelayQueue16000"]
+    assert t.retry_routing_key("study.plan.generate", 1000) == naming["sampleRetryKey1000"]
 
 
 def test_retry_policy_matches_fixture():
