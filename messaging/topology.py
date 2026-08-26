@@ -66,9 +66,14 @@ def retry_routing_key(job_type: str, delay_ms: int) -> str:
     return f"retry.{job_type}.{delay_ms}"
 
 
-def work_queue_arguments() -> Dict[str, Any]:
-    """Work queues dead-letter terminal failures to ai.dlx."""
-    return {"x-dead-letter-exchange": EXCHANGE_DLX}
+def work_queue_arguments(job_type: str) -> Dict[str, Any]:
+    """Work queues dead-letter terminal failures to ai.dlx. The routing key is
+    pinned to the bare type because a retried message's CURRENT key is
+    `retry.<type>.<ms>` — without the override the DLQ binding would miss it."""
+    return {
+        "x-dead-letter-exchange": EXCHANGE_DLX,
+        "x-dead-letter-routing-key": job_type,
+    }
 
 
 def delay_queue_arguments(delay_ms: int) -> Dict[str, Any]:

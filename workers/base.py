@@ -103,7 +103,7 @@ class BaseAIWorker:
         queue = await self._channel.declare_queue(
             work_queue_name(self.job_type),
             durable=True,
-            arguments=work_queue_arguments(),
+            arguments=work_queue_arguments(self.job_type),
         )
         await queue.bind(EXCHANGE_JOBS, routing_key=self.job_type)
 
@@ -159,8 +159,15 @@ class BaseAIWorker:
                 logger.warning("invalid_envelope_dead_lettered", extra={"error": str(exc)})
                 raise TerminalError(f"invalid envelope: {exc}") from exc
 
-            if not await self.store.claim(envelope.messageId):
-                logger.info("duplicate_message_acknowledged", extra={"messageId": envelope.messageId})
+            # Idempotency is PER-ATTEMPT: scheduled retries legitimately reuse
+            # the same messageId; only true redeliveries of one attempt are
+            # duplicates.
+            attempt_no = self._attempt(message)
+            if not await self.store.claim(f"{envelope.messageId}:{attempt_no}"):
+                logger.info(
+                    "duplicate_message_acknowledged",
+                    extra={"messageId": envelope.messageId, "attempt": attempt_no},
+                )
                 return  # processed inside message.process context → ACKed
 
             self._in_flight = asyncio.current_task()

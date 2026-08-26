@@ -2,9 +2,14 @@
 the Node side also validates against. Drift fails CI."""
 
 import json
+import os
 import pathlib
 
-from messaging import topology as t
+# Parity is defined against the CANONICAL ladder — drop any outer-shell
+# override before topology evaluates its constants.
+os.environ.pop("AI_RETRY_DELAYS_MS", None)
+
+from messaging import topology as t  # noqa: E402
 
 FIXTURE = (
     pathlib.Path(__file__)
@@ -44,5 +49,5 @@ def test_retry_policy_matches_fixture():
     assert t.RETRY_DELAYS_MS == fx["retryDelaysMs"]
     assert t.MAX_RETRIES == fx["maxRetries"]
     assert t.RETRY_HEADER == fx["headers"]["retryCount"]
-    assert t.work_queue_arguments() == fx["queueArguments"]["workQueue"]
+    assert t.work_queue_arguments("study.plan.generate") == fx["queueArguments"]["workQueue"]
     assert t.delay_queue_arguments(1000) == fx["queueArguments"]["delayQueue1000"]
