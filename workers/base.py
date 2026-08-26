@@ -171,6 +171,9 @@ class BaseAIWorker:
                 return  # processed inside message.process context → ACKed
 
             self._in_flight = asyncio.current_task()
+            # Exposed for subclass fallback logic (e.g. PLAN-06: fall back to the
+            # deterministic decomposer on the final attempt).
+            self.current_attempt = self._attempt(message)
             try:
                 result_payload = await self.handle(envelope.payload, envelope)
             except _RetryScheduled:
