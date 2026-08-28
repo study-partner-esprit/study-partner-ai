@@ -10,12 +10,16 @@ Prompt-injection isolation for the coach LLM:
   cannot impersonate system instructions through task titles or chat content.
 - Structured system/ML-derived state (focus, fatigue, is_late, counts) is
   serialised separately and treated as trusted input.
+- PII (emails, person names) is redacted from every user-supplied string
+  before wrapping (COACH-04 context preprocessing).
 
-Reuses `security/prompt_guard` from PLAN-03.
+Reuses `security/prompt_guard` from PLAN-03 and
+`agents.coach.context.preprocess` from COACH-04.
 """
 
 import json
 
+from agents.coach.context.preprocess import redact_pii
 from security.prompt_guard import wrap_untrusted
 
 _SYSTEM_BLOCK = """You are an intelligent autonomous study coach that makes nuanced decisions based on student state.
@@ -136,12 +140,17 @@ def build_user_prompt(
 
 # ------------------------------------------------------------ untrusted data
 
+def _wrap(text: str, label: str) -> str:
+    """Redact PII then wrap a user-supplied string in UNTRUSTED DATA blocks."""
+    return wrap_untrusted(redact_pii(text), label=label)
+
+
 def _tasks_section(scheduled_tasks: list | None) -> str:
     if not scheduled_tasks:
         return ""
     lines = []
     for t in scheduled_tasks:
-        title_block = wrap_untrusted(t.get("title") or "(none)", label=_LABEL_TITLE)
+        title_block = _wrap(t.get("title") or "(none)", label=_LABEL_TITLE)
         meta = " | ".join(
             f"{k}={v}"
             for k, v in t.items()
@@ -158,13 +167,13 @@ def _tasks_section(scheduled_tasks: list | None) -> str:
 def _task_context_section(task_context: dict | None) -> str:
     if not task_context or not any(task_context.values()):
         return ""
-    title = wrap_untrusted(task_context.get("title") or "none", label=_LABEL_TITLE)
-    subject = wrap_untrusted(task_context.get("subject") or "unknown", label=_LABEL_SUBJECT)
+    title = _wrap(task_context.get("title") or "none", label=_LABEL_TITLE)
+    subject = _wrap(task_context.get("subject") or "unknown", label=_LABEL_SUBJECT)
     difficulty = task_context.get("difficulty")
     diff_str = f"{difficulty:.2f}" if isinstance(difficulty, (int, float)) else "N/A"
     concepts = task_context.get("key_concepts") or []
     if concepts:
-        concepts_block = wrap_untrusted(", ".join(concepts), label=_LABEL_CONCEPTS)
+        concepts_block = _wrap(", ".join(concepts), label=_LABEL_CONCEPTS)
     else:
         concepts_block = "N/A"
     return (
@@ -183,7 +192,7 @@ def _history_section(recent_history: list | None) -> str:
     for h in recent_history[:5]:
         ts = h.get("ts", "")
         atype = h.get("action_type", "")
-        msg_block = wrap_untrusted(h.get("message") or "(no message)", label=_LABEL_HISTORY)
+        msg_block = _wrap(h.get("message") or "(no message)", label=_LABEL_HISTORY)
         lines.append(f"  - [{ts}] {atype}: {msg_block}")
     return (
         "\n\nRecent coaching history (newest first — use it to avoid repetitive "
