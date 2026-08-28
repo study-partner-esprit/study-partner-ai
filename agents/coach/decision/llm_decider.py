@@ -1,8 +1,11 @@
 import json
 import os
+from datetime import datetime
+
 import google.generativeai as genai
-from agents.coach.models.schemas import CoachInput, CoachAction
+from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
 from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from security.prompt_guard import build_system_block
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -17,7 +20,9 @@ def call_gemini(system_prompt: str, user_prompt: str, trace_id: str = "") -> str
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-1.5-flash")
 
-    full_prompt = f"{system_prompt}\n\n{user_prompt}"
+    # System instructions are a separate, clearly-delimited block (COACH-03);
+    # user content never shares its scope.
+    full_prompt = f"{build_system_block(system_prompt)}\n\n{user_prompt}"
     try:
         response = model.generate_content(full_prompt)
         return response.text
@@ -197,7 +202,21 @@ def decide_with_llm(
     recent_history: list | None = None,
     trace_id: str = "",
 ) -> CoachAction:
-    context_json = input_data.model_dump_json(indent=2)
+    # COACH-03: never dump the full CoachInput into the prompt. Only trusted,
+    # system-derived state is rendered verbatim; every user-supplied string is
+    # wrapped by prompt_guard inside build_user_prompt.
+    state = {
+        "focus_state": input_data.focus_state.state,
+        "focus_score": input_data.focus_state.score,
+        "fatigue_state": input_data.fatigue_state.state,
+        "fatigue_score": input_data.fatigue_state.score,
+        "affective_state": input_data.affective_state,
+        "ignored_count": input_data.ignored_count,
+        "do_not_disturb": input_data.do_not_disturb,
+        "is_late": input_data.is_late,
+        "current_time": _iso(input_data.current_time),
+    }
+    tasks = [_task_line(t) for t in input_data.scheduled_tasks]
 
     task_context = None
     if any(
@@ -216,7 +235,8 @@ def decide_with_llm(
         }
 
     user_prompt = build_user_prompt(
-        context_json,
+        state,
+        scheduled_tasks=tasks,
         recent_history=recent_history,
         task_context=task_context,
     )
@@ -242,3 +262,19 @@ def decide_with_llm(
             message=None,
             reasoning=f"Failed to parse LLM response: {str(e)}",
         )
+
+
+def _iso(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _task_line(task: ScheduledTask) -> dict:
+    return {
+        "task_id": task.task_id,
+        "title": task.title,
+        "start_time": task.start_time.isoformat(),
+        "end_time": task.end_time.isoformat(),
+        "priority": task.priority,
+    }
