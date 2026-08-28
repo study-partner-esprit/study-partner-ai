@@ -5,6 +5,7 @@ from datetime import datetime
 import google.generativeai as genai
 from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
 from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from agents.coach.context.preprocess import window_history
 from security.prompt_guard import build_system_block
 from utils.logger import get_logger
 
@@ -233,6 +234,10 @@ def decide_with_llm(
             "subject": input_data.current_task_subject,
             "key_concepts": input_data.current_task_key_concepts,
         }
+
+    # COACH-04: only the most recent, relevant coaching history reaches the
+    # prompt (windowed by count and age, configurable via env).
+    recent_history = window_history(recent_history) if recent_history else recent_history
 
     user_prompt = build_user_prompt(
         state,
