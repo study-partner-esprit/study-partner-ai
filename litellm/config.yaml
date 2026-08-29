@@ -1,0 +1,101 @@
+# LiteLLM router config (COACH-07).
+#
+# Structure mirrors the reference repo (hackership-ai): each `model_name` is the
+# alias agents call through `utils.llm_client.ask(<alias>, ...)`. API keys are
+# referenced from env via `os.environ/KEY` (e.g. GEMINI_API_KEY, GROQ_API_KEY,
+# NVIDIA_API_KEY, OPENROUTER_API_KEY). Tune models/fallbacks here without code.
+#
+# This file is consumed in-process by utils/llm_client.build_router(); it is also
+# valid as a LiteLLM proxy-server config (mount it at /app/config.yaml) so the
+# same file can power a future `litellm` container.
+
+model_list:
+
+# ————————————————— agent groups (entry points) —————————————————
+
+# COACH — short, frequent nudges: speed + judgement.
+- model_name: coach
+  litellm_params:
+    model: gemini/gemini-2.0-flash
+    api_key: os.environ/GEMINI_API_KEY
+    temperature: 0.5
+    max_tokens: 512
+    drop_params: true
+
+# PLANNER — goal decomposition into plans: strong open-weights reasoning.
+- model_name: planner
+  litellm_params:
+    model: nvidia_nim/deepseek-ai/deepseek-r1
+    api_key: os.environ/NVIDIA_API_KEY
+    temperature: 0.3
+    max_tokens: 2048
+    drop_params: true
+
+# SEARCH — web-result synthesis: long-context + fast.
+- model_name: search
+  litellm_params:
+    model: openrouter/meta-llama/llama-3.3-70b-instruct
+    api_key: os.environ/OPENROUTER_API_KEY
+    temperature: 0.2
+    max_tokens: 1536
+    drop_params: true
+
+# REFLECTION — empathetic, long-form journaling.
+- model_name: reflection
+  litellm_params:
+    model: nvidia_nim/meta/llama-3.3-70b-instruct
+    api_key: os.environ/NVIDIA_API_KEY
+    temperature: 0.7
+    max_tokens: 2048
+    drop_params: true
+
+# COURSE_INGESTION — deterministic title/entity extraction: small + cheap.
+- model_name: course_ingestion
+  litellm_params:
+    model: groq/llama-3.1-8b-instant
+    api_key: os.environ/GROQ_API_KEY
+    temperature: 0.1
+    max_tokens: 1024
+    drop_params: true
+
+# EVALUATOR — question generation + grading: structured outputs.
+- model_name: evaluator
+  litellm_params:
+    model: gemini/gemini-2.0-flash
+    api_key: os.environ/GEMINI_API_KEY
+    temperature: 0.3
+    max_tokens: 1536
+    drop_params: true
+
+# ————————————————— shared fallback providers —————————————————————
+
+- model_name: groq-main
+  litellm_params:
+    model: groq/llama-3.3-70b-versatile
+    api_key: os.environ/GROQ_API_KEY
+    drop_params: true
+
+- model_name: nvidia-main
+  litellm_params:
+    model: nvidia_nim/meta/llama-3.3-70b-instruct
+    api_key: os.environ/NVIDIA_API_KEY
+    drop_params: true
+
+- model_name: openrouter-main
+  litellm_params:
+    model: openrouter/meta-llama/llama-3.3-70b-instruct
+    api_key: os.environ/OPENROUTER_API_KEY
+    drop_params: true
+
+router_settings:
+  num_retries: 2
+  allowed_fails: 2
+  retry_after: 2
+  cooldown_time: 30
+  fallbacks:
+    - coach: [groq-main]
+    - planner: [nvidia-main, groq-main]
+    - search: [groq-main]
+    - reflection: [groq-main]
+    - course_ingestion: [nvidia-main]
+    - evaluator: [groq-main, openrouter-main]
