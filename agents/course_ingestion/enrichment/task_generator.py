@@ -7,43 +7,34 @@ import json
 import os
 from typing import List, Dict
 from pathlib import Path
-import requests
 from dotenv import load_dotenv
 
 # Load .env from project root
 env_path = Path(__file__).resolve().parents[3] / ".env"
 load_dotenv(env_path)
 
-# Use LM Studio instead of Google Gemini
-LM_STUDIO_URL = "http://127.0.0.1:1234/v1/chat/completions"
-
-MODEL_NAME = "lm-studio"  # Using LM Studio
+MODEL_NAME = "course_ingestion"  # model group in litellm/config.yaml (S-MIG-01)
 
 
 def call_llm_task_generation(prompt: str) -> str:
-    """Call LM Studio API for task generation."""
+    """Call the `course_ingestion` LLM through the shared LiteLLM client.
+
+    Returns "" on failure so callers can use their rule-based fallbacks.
+    """
     try:
-        messages = [{"role": "user", "content": prompt}]
+        from utils.llm_client import LLMRequestError, MissingMockResponderError, ask
 
-        response = requests.post(
-            LM_STUDIO_URL,
-            json={
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 3000,
-            },
-            timeout=60,
-        )
-
-        if response.status_code == 200:
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-        else:
-            print(f"LM Studio API error: {response.status_code} - {response.text}")
+        try:
+            return ask(
+                "course_ingestion",
+                "You are an educational task designer creating practical, actionable study tasks.",
+                prompt,
+            )
+        except (LLMRequestError, MissingMockResponderError) as e:
+            print(f"Error calling LLM ({MODEL_NAME}): {e}")
             return ""
-
     except Exception as e:
-        print(f"Error calling LM Studio: {e}")
+        print(f"Error calling LLM ({MODEL_NAME}): {e}")
         return ""
 
 
