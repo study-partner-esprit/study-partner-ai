@@ -15,11 +15,13 @@ inside the RabbitMQ job bus instead of the synchronous HTTP path:
   `nudge` CoachOutput (COACH-05) plus a sanitized `coach_error` when the LLM
   output could not be parsed/validated; the Node result consumer correlates
   it back to the AiJob (AI-COM-07)
+- `nudge` passes shape + content-policy validation (COACH-06): list-based
+  filter with an LLM-guard fallback, one correction retry, then the job FAILS
+  terminal with a sanitized reason
 
-COACH-06 adds content-policy validation on top of `nudge`. COACH-10 moves the
-Node caller off the legacy HTTP route. COACH-13 will feed the bounded
-`signals` window into the coach context (today the live flattened fields are
-used).
+COACH-10 moves the Node caller off the legacy HTTP route. COACH-13 will feed
+the bounded `signals` window into the coach context (today the live flattened
+fields are used).
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ from messaging.failures import TerminalError
 from pydantic import ValidationError
 from workers.base import BaseAIWorker
 from workers.schemas import CoachRequest
+
+from agents.coach.decision.output_validator import CoachOutputRejectedError
 
 
 class CoachWorker(BaseAIWorker):
@@ -62,12 +66,17 @@ class CoachWorker(BaseAIWorker):
 
     async def handle(self, payload: Dict[str, Any], envelope) -> Dict[str, Any]:
         request = self._build_request(payload)
-        action = await asyncio.to_thread(
-            self.orchestrator.run_coach,
-            user_id=envelope.userId,
-            trace_id=envelope.correlationId,
-            **request.to_coach_context(),
-        )
+        try:
+            action = await asyncio.to_thread(
+                self.orchestrator.run_coach,
+                user_id=envelope.userId,
+                trace_id=envelope.correlationId,
+                **request.to_coach_context(),
+            )
+        except CoachOutputRejectedError as exc:
+            # COACH-06: output failed shape/content-policy validation after one
+            # correction retry → job FAILED with a sanitized reason.
+            raise TerminalError(str(exc)) from exc
         return self._coach_payload(action)
 
     # ------------------------------------------------------------ internals
