@@ -90,12 +90,21 @@ Return ONLY a JSON object with schedule_changes included when appropriate:
   "message": "personalized message or null",
   "reasoning": "detailed explanation citing ML signals and your analysis",
   "target_task_id": "specific task ID or null",
+  "nudge": {
+    "nudge_text": "the user-facing message, 1 to 500 characters",
+    "intensity": "0.0 to 1.0 — how urgent/strong the nudge is",
+    "category": "motivation | focus | fatigue | break"
+  },
   "schedule_changes": {
     "action": "add_break | suspend_session",
     "duration_minutes": 5 or 10,
     "reasoning": "why this schedule change helps"
   } or null
 }
+
+The "nudge" object is REQUIRED on every response. nudge_text must be between
+1 and 500 characters, intensity must be a number between 0.0 and 1.0, and
+category must be exactly one of: motivation, focus, fatigue, break.
 """
 
 

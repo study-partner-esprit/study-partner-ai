@@ -11,12 +11,15 @@ inside the RabbitMQ job bus instead of the synchronous HTTP path:
   TERMINAL (retrying cannot fix a bad request)
 - AIOrchestrator.run_coach is LLM/DB/ML-heavy → executed off the event loop
   via to_thread
-- result payload is the JSON-safe CoachAction dump; the Node result consumer
-  correlates it back to the AiJob (AI-COM-07)
+- result payload is the JSON-safe CoachAction dump, carrying the strict
+  `nudge` CoachOutput (COACH-05) plus a sanitized `coach_error` when the LLM
+  output could not be parsed/validated; the Node result consumer correlates
+  it back to the AiJob (AI-COM-07)
 
-The strict CoachOutput schema lands with COACH-05. COACH-10 moves the Node
-caller off the legacy HTTP route. COACH-13 will feed the bounded `signals`
-window into the coach context (today the live flattened fields are used).
+COACH-06 adds content-policy validation on top of `nudge`. COACH-10 moves the
+Node caller off the legacy HTTP route. COACH-13 will feed the bounded
+`signals` window into the coach context (today the live flattened fields are
+used).
 """
 
 from __future__ import annotations
