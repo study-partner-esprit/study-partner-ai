@@ -21,8 +21,8 @@ RUN pip install --no-cache-dir \
     pymongo \
     pydantic \
     python-dotenv \
-    google-generativeai \
     google-genai \
+    litellm \
     requests \
     PyMuPDF \
     pillow \
