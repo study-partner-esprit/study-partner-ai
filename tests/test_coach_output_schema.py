@@ -24,6 +24,7 @@ from agents.coach.decision.output_parser import (
     parse_response,
     safe_fallback_nudge,
 )
+from agents.coach.decision.output_validator import CoachOutputRejectedError
 from agents.coach.models.schemas import (
     CoachAction,
     CoachInput,
@@ -191,38 +192,38 @@ def test_decide_sets_validated_nudge(mock_call):
 
 
 @patch("agents.coach.decision.llm_decider.call_gemini")
-def test_decide_invalid_nudge_sanitizes(mock_call):
+def test_decide_invalid_nudge_rejected_after_retry(mock_call):
     mock_call.return_value = json.dumps(
         _llm_decision(nudge={"nudge_text": "secret raw text", "intensity": 3.0, "category": "break"})
     )
-    action = decide_with_llm(make_coach_input(), trace_id="tr-2")
-    assert action.action_type == "encourage"  # decision still valid
-    assert action.coach_error is not None
-    assert action.nudge == safe_fallback_nudge()
-    assert action.message is None
-    assert "secret raw text" not in action.coach_error
-    assert "secret raw text" not in action.nudge.nudge_text
+    with pytest.raises(CoachOutputRejectedError) as exc:
+        decide_with_llm(make_coach_input(), trace_id="tr-2")
+    reason = str(exc.value)
+    assert mock_call.call_count == 2  # one correction retry
+    assert "secret raw text" not in reason
+    assert "intensity" in reason or "nudge" in reason
 
 
 @patch("agents.coach.decision.llm_decider.call_gemini")
-def test_decide_unparseable_output_sanitizes(mock_call):
+def test_decide_unparseable_output_rejected_after_retry(mock_call):
     mock_call.return_value = "bleh { not valid"
-    action = decide_with_llm(make_coach_input(), trace_id="tr-3")
-    assert action.action_type == "silence"
-    assert action.coach_error == SANITIZED_LLM_PARSE_ERROR
-    assert "bleh" not in action.reasoning
-    assert action.message is None
+    with pytest.raises(CoachOutputRejectedError) as exc:
+        decide_with_llm(make_coach_input(), trace_id="tr-3")
+    reason = str(exc.value)
+    assert mock_call.call_count == 2
+    assert "bleh" not in reason
 
 
 @patch("agents.coach.decision.llm_decider.call_gemini")
-def test_decide_malformed_decision_sanitizes(mock_call):
+def test_decide_malformed_decision_rejected_after_retry(mock_call):
     mock_call.return_value = json.dumps(
         {"action_type": "monday", "reasoning": "weird", "message": None}
     )
-    action = decide_with_llm(make_coach_input(), trace_id="tr-4")
-    assert action.action_type == "silence"
-    assert action.coach_error is not None
-    assert SANITIZED_OUTPUT_VALIDATION_ERROR in action.coach_error
+    with pytest.raises(CoachOutputRejectedError) as exc:
+        decide_with_llm(make_coach_input(), trace_id="tr-4")
+    reason = str(exc.value)
+    assert mock_call.call_count == 2
+    assert SANITIZED_OUTPUT_VALIDATION_ERROR in reason
 
 
 # ------------------------------------------------------- worker roundtrip #

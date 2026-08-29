@@ -10,7 +10,12 @@ from agents.coach.decision.output_parser import (
     CoachOutputError,
     extract_coach_output,
     parse_response,
-    safe_fallback_nudge,
+)
+from agents.coach.decision.output_validator import (
+    CoachOutputRejectedError,
+    check_coach_output,
+    gemini_content_guard,
+    sanitize_nudge,
 )
 from agents.coach.context.preprocess import window_history
 from pydantic import ValidationError
@@ -210,6 +215,7 @@ def decide_with_llm(
     input_data: CoachInput,
     recent_history: list | None = None,
     trace_id: str = "",
+    content_guard=None,
 ) -> CoachAction:
     # COACH-03: never dump the full CoachInput into the prompt. Only trusted,
     # system-derived state is rendered verbatim; every user-supplied string is
@@ -254,44 +260,83 @@ def decide_with_llm(
         task_context=task_context,
     )
 
-    raw = call_gemini(SYSTEM_PROMPT, user_prompt, trace_id=trace_id)
+    # COACH-05 + COACH-06: LLM output is reduced to a strict CoachOutput and
+    # must pass shape + content-policy validation. We probe once, then make a
+    # single correction retry; on a second failure the output is FAILED with a
+    # sanitized reason (CoachOutputRejectedError) — raw LLM content never
+    # reaches job results.
+    return _decide_with_retry(user_prompt, content_guard, trace_id)
 
-    # COACH-05: LLM output must be reduced to a strict CoachOutput. Failures
-    # are reported via a sanitized `coach_error` — raw LLM content is never
-    # passed through to job results.
-    action = None
-    coach_error = None
-    try:
-        parsed = parse_response(raw)
-        # Build the decision without `nudge` first: a malformed nudge must not
-        # destroy the (still server-validated) decision — it is sanitized below.
-        action = CoachAction(**{k: v for k, v in parsed.items() if k != "nudge"})
-        nudge = extract_coach_output(parsed)
-        action.nudge = nudge
-        action.message = nudge.nudge_text
-    except CoachOutputError as exc:
-        coach_error = str(exc)
-        if action is None:
-            action = CoachAction(
-                action_type="silence",
-                message=None,
-                reasoning=f"Invalid coach output: {coach_error}",
-                coach_error=coach_error,
-            )
-        else:
-            action.coach_error = coach_error
-            action.nudge = safe_fallback_nudge()
-            action.message = None
-    except (ValidationError, ValueError):
-        # The decision payload itself is malformed (bad action_type, ...).
-        coach_error = SANITIZED_OUTPUT_VALIDATION_ERROR
-        action = CoachAction(
-            action_type="silence",
-            message=None,
-            reasoning=f"Invalid coach output: {coach_error}",
-            coach_error=coach_error,
+
+def _decide_with_retry(user_prompt: str, content_guard, trace_id: str) -> CoachAction:
+    if content_guard is None and _has_real_api_key():
+        content_guard = gemini_content_guard
+
+    problems: list[str] = []
+    for attempt in range(1, 3):  # first pass + one correction retry
+        prompt = user_prompt if attempt == 1 else user_prompt + _correction_note(problems)
+        raw = call_gemini(SYSTEM_PROMPT, prompt, trace_id=trace_id)
+        try:
+            parsed = parse_response(raw)
+            candidate = CoachAction(**{k: v for k, v in parsed.items() if k != "nudge"})
+        except CoachOutputError as exc:
+            problems = [str(exc)]
+            continue
+        except (ValidationError, ValueError):
+            problems = [SANITIZED_OUTPUT_VALIDATION_ERROR]
+            continue
+
+        # An intentional silence needs no user-facing nudge.
+        if candidate.action_type == "silence":
+            candidate.message = None
+            candidate.coach_error = None
+            candidate.nudge = None
+            _log(candidate, trace_id, coach_error=None)
+            return candidate
+
+        try:
+            nudge = extract_coach_output(parsed)
+            nudge = sanitize_nudge(nudge)
+        except (CoachOutputError, ValidationError):
+            problems = ["nudge_text length out of range"]
+            continue
+
+        problems = check_coach_output(nudge, content_guard=content_guard)
+        if not problems:
+            candidate.nudge = nudge
+            candidate.message = nudge.nudge_text
+            _log(candidate, trace_id, coach_error=None)
+            return candidate
+
+        logger.warning(
+            "coach_output_rejected",
+            extra={"attempt": attempt, "reason": "; ".join(problems[:3]), "trace_id": trace_id},
         )
 
+    raise CoachOutputRejectedError(_rejected_reason(problems))
+
+
+def _correction_note(problems: list[str]) -> str:
+    reason = "; ".join(problems[:3]) or "validation"
+    return (
+        f"\n\nYour previous draft was rejected: {reason}. Reply again with ONLY "
+        "a corrected JSON object. The nudge must be plain text of 1 to 500 "
+        "characters and must not contain self-harm, harassment, violence or "
+        "unsafe content."
+    )
+
+
+def _rejected_reason(problems: list[str]) -> str:
+    reason = "; ".join(problems[:3])
+    return f"coach output rejected: {reason}" if reason else "coach output rejected"
+
+
+def _has_real_api_key() -> bool:
+    key = os.getenv("GEMINI_API_KEY")
+    return bool(key) and key != "dummy_key_for_testing"
+
+
+def _log(action: CoachAction, trace_id: str, coach_error) -> None:
     logger.info(
         "coach_llm_action",
         extra={
@@ -300,7 +345,6 @@ def decide_with_llm(
             "trace_id": trace_id,
         },
     )
-    return action
 
 
 def _iso(value):
