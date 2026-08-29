@@ -5,7 +5,15 @@ from datetime import datetime
 import google.generativeai as genai
 from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
 from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from agents.coach.decision.output_parser import (
+    SANITIZED_OUTPUT_VALIDATION_ERROR,
+    CoachOutputError,
+    extract_coach_output,
+    parse_response,
+    safe_fallback_nudge,
+)
 from agents.coach.context.preprocess import window_history
+from pydantic import ValidationError
 from security.prompt_guard import build_system_block
 from utils.logger import get_logger
 
@@ -248,25 +256,51 @@ def decide_with_llm(
 
     raw = call_gemini(SYSTEM_PROMPT, user_prompt, trace_id=trace_id)
 
+    # COACH-05: LLM output must be reduced to a strict CoachOutput. Failures
+    # are reported via a sanitized `coach_error` — raw LLM content is never
+    # passed through to job results.
+    action = None
+    coach_error = None
     try:
-        parsed = json.loads(raw)
-        action = CoachAction(**parsed)
-        logger.info(
-            "coach_llm_action",
-            extra={"action_type": action.action_type, "trace_id": trace_id},
-        )
-        return action
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(
-            "coach_llm_parse_error",
-            extra={"error": str(e), "trace_id": trace_id},
-        )
-        # Fallback to silence
-        return CoachAction(
+        parsed = parse_response(raw)
+        # Build the decision without `nudge` first: a malformed nudge must not
+        # destroy the (still server-validated) decision — it is sanitized below.
+        action = CoachAction(**{k: v for k, v in parsed.items() if k != "nudge"})
+        nudge = extract_coach_output(parsed)
+        action.nudge = nudge
+        action.message = nudge.nudge_text
+    except CoachOutputError as exc:
+        coach_error = str(exc)
+        if action is None:
+            action = CoachAction(
+                action_type="silence",
+                message=None,
+                reasoning=f"Invalid coach output: {coach_error}",
+                coach_error=coach_error,
+            )
+        else:
+            action.coach_error = coach_error
+            action.nudge = safe_fallback_nudge()
+            action.message = None
+    except (ValidationError, ValueError):
+        # The decision payload itself is malformed (bad action_type, ...).
+        coach_error = SANITIZED_OUTPUT_VALIDATION_ERROR
+        action = CoachAction(
             action_type="silence",
             message=None,
-            reasoning=f"Failed to parse LLM response: {str(e)}",
+            reasoning=f"Invalid coach output: {coach_error}",
+            coach_error=coach_error,
         )
+
+    logger.info(
+        "coach_llm_action",
+        extra={
+            "action_type": action.action_type,
+            "coach_error": coach_error,
+            "trace_id": trace_id,
+        },
+    )
+    return action
 
 
 def _iso(value):

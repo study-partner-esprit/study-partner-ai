@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, TYPE_CHECKING, Any
 from datetime import datetime
 
@@ -54,6 +54,21 @@ class CoachInput(BaseModel):
     current_task_key_concepts: Optional[List[str]] = None
 
 
+class CoachOutput(BaseModel):
+    """Strict user-facing coach output (F03 / COACH-05).
+
+    The UI must only ever trust this validated structure — never free-form
+    LLM text. Fields are constrained so malformed nudges are rejected early:
+    - `nudge_text`: 1–500 chars
+    - `intensity`:   0.0–1.0
+    - `category`:    motivation | focus | fatigue | break
+    """
+
+    nudge_text: str = Field(min_length=1, max_length=500)
+    intensity: float = Field(ge=0.0, le=1.0)
+    category: Literal["motivation", "focus", "fatigue", "break"]
+
+
 class CoachAction(BaseModel):
     action_type: Literal[
         "nudge", "encourage", "suggest_break", "renegotiate_task", "silence"
@@ -64,3 +79,8 @@ class CoachAction(BaseModel):
 
     # NEW: Optional scheduling directives for autonomous execution
     schedule_changes: Optional[ScheduleChange] = None
+
+    # COACH-05: strict validated user-facing output (LLM path only) and a
+    # sanitized error string when the LLM output cannot be parsed/validated.
+    nudge: Optional[CoachOutput] = None
+    coach_error: Optional[str] = None
