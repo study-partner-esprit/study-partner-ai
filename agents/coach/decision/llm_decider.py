@@ -1,8 +1,6 @@
 import json
-import os
 from datetime import datetime
 
-import google.generativeai as genai
 from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
 from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
 from agents.coach.decision.output_parser import (
@@ -19,33 +17,26 @@ from agents.coach.decision.output_validator import (
 )
 from agents.coach.context.preprocess import window_history
 from pydantic import ValidationError
-from security.prompt_guard import build_system_block
+from utils.llm_client import LLMRequestError, ask
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 def call_gemini(system_prompt: str, user_prompt: str, trace_id: str = "") -> str:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or api_key == "dummy_key_for_testing":
-        # Return intelligent mock response based on input data for testing
-        return get_mock_gemini_response(user_prompt)
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    # System instructions are a separate, clearly-delimited block (COACH-03);
-    # user content never shares its scope.
-    full_prompt = f"{build_system_block(system_prompt)}\n\n{user_prompt}"
+    # COACH-07: routed through the shared LiteLLM client (utils/llm_client.py).
+    # Without a real provider key (or with LLM_MOCK=1) it returns the mock
+    # responder; a failing real call also degrades to the mock, as before.
     try:
-        response = model.generate_content(full_prompt)
-        return response.text
-    except Exception as e:
-        logger.warning(
-            "gemini_api_error",
-            extra={"error": str(e), "trace_id": trace_id},
+        return ask(
+            "coach",
+            system_prompt,
+            user_prompt,
+            trace_id=trace_id,
+            mock_fn=get_mock_gemini_response,
         )
-        # Fallback to mock response
+    except LLMRequestError:
+        logger.warning("coach_llm_api_error", extra={"trace_id": trace_id})
         return get_mock_gemini_response(user_prompt)
 
 
