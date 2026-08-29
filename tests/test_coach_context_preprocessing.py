@@ -235,8 +235,9 @@ def test_decide_with_llm_excludes_stale_history(mock_call):
         '{"action_type": "encourage", "message": "ok", '
         '"reasoning": "test", "target_task_id": "t1"}'
     )
-    stale = NOW - timedelta(minutes=300)
-    recent = NOW - timedelta(minutes=5)
+    now = datetime.now(timezone.utc)
+    stale = now - timedelta(minutes=300)
+    recent = now - timedelta(minutes=5)
     decide_with_llm(
         make_coach_input(),
         recent_history=_history([stale, recent]),
@@ -256,7 +257,8 @@ def test_decide_with_llm_redacts_pii_from_prompt(mock_call):
     cfg = make_coach_input()
     cfg.scheduled_tasks[0].title = "Email Prof. Ada Lovelace at ada@example.com"
     cfg.current_task_key_concepts = ["Dr. Grace Hopper"]
-    decide_with_llm(cfg, recent_history=_history([NOW - timedelta(minutes=5)]))
+    now = datetime.now(timezone.utc)
+    decide_with_llm(cfg, recent_history=_history([now - timedelta(minutes=5)]))
     _, user = mock_call.call_args.args[:2]
     assert "ada@example.com" not in user
     assert "Ada Lovelace" not in user
