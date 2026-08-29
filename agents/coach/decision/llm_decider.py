@@ -1,32 +1,42 @@
 import json
-import os
-import google.generativeai as genai
-from agents.coach.models.schemas import CoachInput, CoachAction
+from datetime import datetime
+
+from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
 from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from agents.coach.decision.output_parser import (
+    SANITIZED_OUTPUT_VALIDATION_ERROR,
+    CoachOutputError,
+    extract_coach_output,
+    parse_response,
+)
+from agents.coach.decision.output_validator import (
+    CoachOutputRejectedError,
+    check_coach_output,
+    gemini_content_guard,
+    sanitize_nudge,
+)
+from agents.coach.context.preprocess import window_history
+from pydantic import ValidationError
+from utils.llm_client import LLMRequestError, ask
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 def call_gemini(system_prompt: str, user_prompt: str, trace_id: str = "") -> str:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or api_key == "dummy_key_for_testing":
-        # Return intelligent mock response based on input data for testing
-        return get_mock_gemini_response(user_prompt)
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-
-    full_prompt = f"{system_prompt}\n\n{user_prompt}"
+    # COACH-07: routed through the shared LiteLLM client (utils/llm_client.py).
+    # Without a real provider key (or with LLM_MOCK=1) it returns the mock
+    # responder; a failing real call also degrades to the mock, as before.
     try:
-        response = model.generate_content(full_prompt)
-        return response.text
-    except Exception as e:
-        logger.warning(
-            "gemini_api_error",
-            extra={"error": str(e), "trace_id": trace_id},
+        return ask(
+            "coach",
+            system_prompt,
+            user_prompt,
+            trace_id=trace_id,
+            mock_fn=get_mock_gemini_response,
         )
-        # Fallback to mock response
+    except LLMRequestError:
+        logger.warning("coach_llm_api_error", extra={"trace_id": trace_id})
         return get_mock_gemini_response(user_prompt)
 
 
@@ -196,8 +206,23 @@ def decide_with_llm(
     input_data: CoachInput,
     recent_history: list | None = None,
     trace_id: str = "",
+    content_guard=None,
 ) -> CoachAction:
-    context_json = input_data.model_dump_json(indent=2)
+    # COACH-03: never dump the full CoachInput into the prompt. Only trusted,
+    # system-derived state is rendered verbatim; every user-supplied string is
+    # wrapped by prompt_guard inside build_user_prompt.
+    state = {
+        "focus_state": input_data.focus_state.state,
+        "focus_score": input_data.focus_state.score,
+        "fatigue_state": input_data.fatigue_state.state,
+        "fatigue_score": input_data.fatigue_state.score,
+        "affective_state": input_data.affective_state,
+        "ignored_count": input_data.ignored_count,
+        "do_not_disturb": input_data.do_not_disturb,
+        "is_late": input_data.is_late,
+        "current_time": _iso(input_data.current_time),
+    }
+    tasks = [_task_line(t) for t in input_data.scheduled_tasks]
 
     task_context = None
     if any(
@@ -215,30 +240,115 @@ def decide_with_llm(
             "key_concepts": input_data.current_task_key_concepts,
         }
 
+    # COACH-04: only the most recent, relevant coaching history reaches the
+    # prompt (windowed by count and age, configurable via env).
+    recent_history = window_history(recent_history) if recent_history else recent_history
+
     user_prompt = build_user_prompt(
-        context_json,
+        state,
+        scheduled_tasks=tasks,
         recent_history=recent_history,
         task_context=task_context,
     )
 
-    raw = call_gemini(SYSTEM_PROMPT, user_prompt, trace_id=trace_id)
+    # COACH-05 + COACH-06: LLM output is reduced to a strict CoachOutput and
+    # must pass shape + content-policy validation. We probe once, then make a
+    # single correction retry; on a second failure the output is FAILED with a
+    # sanitized reason (CoachOutputRejectedError) — raw LLM content never
+    # reaches job results.
+    return _decide_with_retry(user_prompt, content_guard, trace_id)
 
-    try:
-        parsed = json.loads(raw)
-        action = CoachAction(**parsed)
-        logger.info(
-            "coach_llm_action",
-            extra={"action_type": action.action_type, "trace_id": trace_id},
-        )
-        return action
-    except (json.JSONDecodeError, ValueError) as e:
+
+def _decide_with_retry(user_prompt: str, content_guard, trace_id: str) -> CoachAction:
+    if content_guard is None and _has_real_api_key():
+        content_guard = gemini_content_guard
+
+    problems: list[str] = []
+    for attempt in range(1, 3):  # first pass + one correction retry
+        prompt = user_prompt if attempt == 1 else user_prompt + _correction_note(problems)
+        raw = call_gemini(SYSTEM_PROMPT, prompt, trace_id=trace_id)
+        try:
+            parsed = parse_response(raw)
+            candidate = CoachAction(**{k: v for k, v in parsed.items() if k != "nudge"})
+        except CoachOutputError as exc:
+            problems = [str(exc)]
+            continue
+        except (ValidationError, ValueError):
+            problems = [SANITIZED_OUTPUT_VALIDATION_ERROR]
+            continue
+
+        # An intentional silence needs no user-facing nudge.
+        if candidate.action_type == "silence":
+            candidate.message = None
+            candidate.coach_error = None
+            candidate.nudge = None
+            _log(candidate, trace_id, coach_error=None)
+            return candidate
+
+        try:
+            nudge = extract_coach_output(parsed)
+            nudge = sanitize_nudge(nudge)
+        except (CoachOutputError, ValidationError):
+            problems = ["nudge_text length out of range"]
+            continue
+
+        problems = check_coach_output(nudge, content_guard=content_guard)
+        if not problems:
+            candidate.nudge = nudge
+            candidate.message = nudge.nudge_text
+            _log(candidate, trace_id, coach_error=None)
+            return candidate
+
         logger.warning(
-            "coach_llm_parse_error",
-            extra={"error": str(e), "trace_id": trace_id},
+            "coach_output_rejected",
+            extra={"attempt": attempt, "reason": "; ".join(problems[:3]), "trace_id": trace_id},
         )
-        # Fallback to silence
-        return CoachAction(
-            action_type="silence",
-            message=None,
-            reasoning=f"Failed to parse LLM response: {str(e)}",
-        )
+
+    raise CoachOutputRejectedError(_rejected_reason(problems))
+
+
+def _correction_note(problems: list[str]) -> str:
+    reason = "; ".join(problems[:3]) or "validation"
+    return (
+        f"\n\nYour previous draft was rejected: {reason}. Reply again with ONLY "
+        "a corrected JSON object. The nudge must be plain text of 1 to 500 "
+        "characters and must not contain self-harm, harassment, violence or "
+        "unsafe content."
+    )
+
+
+def _rejected_reason(problems: list[str]) -> str:
+    reason = "; ".join(problems[:3])
+    return f"coach output rejected: {reason}" if reason else "coach output rejected"
+
+
+def _has_real_api_key() -> bool:
+    key = os.getenv("GEMINI_API_KEY")
+    return bool(key) and key != "dummy_key_for_testing"
+
+
+def _log(action: CoachAction, trace_id: str, coach_error) -> None:
+    logger.info(
+        "coach_llm_action",
+        extra={
+            "action_type": action.action_type,
+            "coach_error": coach_error,
+            "trace_id": trace_id,
+        },
+    )
+
+
+def _iso(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _task_line(task: ScheduledTask) -> dict:
+    return {
+        "task_id": task.task_id,
+        "title": task.title,
+        "start_time": task.start_time.isoformat(),
+        "end_time": task.end_time.isoformat(),
+        "priority": task.priority,
+    }
