@@ -45,7 +45,7 @@
   - `CoachInput` extended with `current_task_title`, `current_task_difficulty`, `current_task_subject`, `current_task_key_concepts` and requires `fatigue_state` (Pydantic model).
 
 - agents/coach/decision/prompt.py
-  - `build_user_prompt(context_json, recent_history=None, task_context=None)` — composes prompt with recent actions and current task context, increasing LLM context relevance.
+  - `build_user_prompt(state, scheduled_tasks=None, recent_history=None, task_context=None)` — composes prompt with current task context and recent actions; all user-generated text wrapped in UNTRUSTED DATA blocks (COACH-03).
 
 - agents/coach/decision/llm_decider.py
   - `decide_with_llm()` accepts `recent_history` + `trace_id`, calls LLM with structured prompt, logs parse errors and returns `CoachAction`.

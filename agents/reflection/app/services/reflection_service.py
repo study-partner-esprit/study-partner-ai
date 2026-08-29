@@ -1,15 +1,24 @@
 import os
 import json
-from groq import Groq
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from app.services.trend_service import compute_trends
 from app.database import reflections_collection
-from datetime import datetime, timezone
 from pymongo.errors import PyMongoError
+from utils.llm_client import (
+    LLMRequestError,
+    MissingMockResponderError,
+    agent_config,
+    ask,
+)
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+REFLECTION_SYSTEM_PROMPT = (
+    "You are an intelligent study coach writing a personalized weekly "
+    "reflection. Be specific, human, and encouraging. Reference the actual "
+    "numbers in your analysis."
+)
 
 
 def build_prompt(user_id: str, trends: dict) -> str:
@@ -71,17 +80,14 @@ def generate_reflection(user_id: str) -> dict:
             return trends
 
         prompt = build_prompt(user_id, trends)
-        print(f"[DEBUG] Calling Groq LLM...")
+        print(f"[DEBUG] Calling reflection LLM...")
 
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=1024
-        )
-
-        raw = response.choices[0].message.content.strip()
-        print(f"[DEBUG] Groq response received: {raw[:200]}...")
+        raw = ""
+        try:
+            raw = ask("reflection", REFLECTION_SYSTEM_PROMPT, prompt).strip()
+        except (LLMRequestError, MissingMockResponderError) as e:
+            return {"status": "error", "detail": f"Reflection LLM unavailable: {str(e)}"}
+        print(f"[DEBUG] Reflection response received: {raw[:200]}...")
 
         start  = raw.find("{")
         end    = raw.rfind("}") + 1
@@ -95,7 +101,7 @@ def generate_reflection(user_id: str) -> dict:
         import traceback
         error_msg = traceback.format_exc()
         print(f"[ERROR] Exception: {error_msg}")
-        return {"status": "error", "detail": f"Groq error: {str(e)}", "traceback": error_msg}
+        return {"status": "error", "detail": f"Reflection error: {str(e)}", "traceback": error_msg}
 
     reflection = {
         "user_id":           user_id,
@@ -106,7 +112,7 @@ def generate_reflection(user_id: str) -> dict:
         "weaknesses":        parsed.get("weaknesses", []),
         "tips":              parsed.get("tips", []),
         "trends_snapshot":   trends["trends"],
-        "generated_by":      "groq-llama3-8b",
+        "generated_by":      agent_config("reflection").model,
         "created_at":        datetime.now(timezone.utc).isoformat()
     }
 

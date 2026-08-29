@@ -3,7 +3,6 @@ import os
 import re
 from typing import Dict
 from pathlib import Path
-import requests
 from dotenv import load_dotenv
 
 # Load .env from project root
@@ -11,41 +10,35 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parents[3] / ".env"
 load_dotenv()
 
-# Use LM Studio instead of Google Gemini
-LM_STUDIO_URL = "http://127.0.0.1:1234/v1/chat/completions"
+
+MODEL_NAME = "course_ingestion"  # model group in litellm/config.yaml (S-MIG-01)
+
+# Short persona used when no explicit system prompt is provided.
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an educational content analyzer that cleans, structures, and "
+    "summarizes learning materials. Return only valid JSON or the requested "
+    "text with no extra prose."
+)
 
 
 def call_llm(prompt: str, system_prompt: str = None) -> str:
-    """Call LM Studio API for text generation."""
+    """Call the `course_ingestion` LLM through the shared LiteLLM client.
+
+    Returns "" on failure so callers can use their rule-based fallbacks.
+    """
     try:
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        from utils.llm_client import LLMRequestError, MissingMockResponderError, ask
 
-        response = requests.post(
-            LM_STUDIO_URL,
-            json={
-                "messages": messages,
-                "temperature": 0.1,
-                "max_tokens": 2000,
-            },
-            timeout=30,
-        )
-
-        if response.status_code == 200:
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-        else:
-            print(f"LM Studio API error: {response.status_code} - {response.text}")
+        if not system_prompt or system_prompt == MODEL_NAME:
+            system_prompt = DEFAULT_SYSTEM_PROMPT
+        try:
+            return ask("course_ingestion", system_prompt, prompt)
+        except (LLMRequestError, MissingMockResponderError) as e:
+            print(f"Error calling LLM ({MODEL_NAME}): {e}")
             return ""
-
     except Exception as e:
-        print(f"Error calling LM Studio: {e}")
+        print(f"Error calling LLM ({MODEL_NAME}): {e}")
         return ""
-
-
-MODEL_NAME = "lm-studio"  # Using LM Studio
 
 
 SYSTEM_PROMPT = """

@@ -1,20 +1,24 @@
-import requests
 from typing import List
 import uuid
 from agents.planner.models.task_graph import AtomicTask
-from security.prompt_guard import build_system_block, wrap_untrusted
+from security.prompt_guard import wrap_untrusted
+from utils.llm_client import LLMRequestError, MissingMockResponderError, ask
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class LLMDecomposerReal:
     """
-    Real LLM decomposer using LM Studio.
-    Assumes LM Studio exposes a local REST API.
+    Real LLM decomposer routed through the shared LiteLLM client (S-MIG-01).
+    The `planner` model is configured in litellm/config.yaml; without any
+    provider key the call short-circuits to `None` so the caller can fall back
+    to the rule-based `SimpleGoalDecomposer`.
     """
 
-    def __init__(self, endpoint: str = "http://127.0.0.1:1234/v1/chat/completions"):
-        """
-        :param endpoint: LM Studio local API URL
-        """
+    def __init__(self, endpoint: str | None = None):
+        # `endpoint` kept for backward compatibility (LM Studio era); the
+        # shared client + litellm/config.yaml now own routing.
         self.endpoint = endpoint
 
     def decompose(
@@ -26,8 +30,8 @@ class LLMDecomposerReal:
         :param concepts: retrieved concepts from RAG
         :return: list of AtomicTask
         """
-        messages = self._build_messages(goal, concepts, available_minutes)
-        tasks = self._call_llm(messages)
+        system, user_prompt = self._build_prompt(goal, concepts, available_minutes)
+        tasks = self._completion(system, user_prompt)
 
         # PLAN-05: one correction retry when the first response is unusable
         if tasks is None:
@@ -36,13 +40,13 @@ class LLMDecomposerReal:
                 "the requested schema. Reply again with ONLY the JSON array, no "
                 "prose, no markdown fences."
             )
-            tasks = self._call_llm([*messages, {"role": "user", "content": correction}])
+            tasks = self._completion(system, user_prompt + "\n\n" + correction)
 
         if tasks is None:
             raise ValueError("LLM returned unusable output after one correction retry")
         return tasks
 
-    def _build_messages(self, goal: str, concepts: List[str], available_minutes: int):
+    def _build_prompt(self, goal: str, concepts: List[str], available_minutes: int):
         """System instructions isolated; all user content wrapped as untrusted."""
         system_instructions = (
             "You are a study planner assistant. Break the user's learning goal "
@@ -65,38 +69,31 @@ class LLMDecomposerReal:
             f"Relevant course concepts:\n{context_block}\n\n"
             f"Learning goal:\n{goal_block}"
         )
-        return [
-            {"role": "system", "content": build_system_block(system_instructions)},
-            {"role": "user", "content": user_content},
-        ]
+        return system_instructions, user_content
 
-    def _call_llm(self, messages) -> List[AtomicTask] | None:
+    def _completion(self, system: str, user_prompt: str) -> List[AtomicTask] | None:
         """One LLM round-trip; returns None when the output cannot be parsed."""
         try:
-            response = requests.post(
-                self.endpoint,
-                json={
-                    "model": "qwen/qwen2.5-vl-7b",
-                    "messages": messages,
-                    "max_tokens": 1500,
-                    "temperature": 0.7,
-                },
-                timeout=120,  # Increased timeout for slower models
-            )
-            response.raise_for_status()
-            result_json = response.json()
+            raw = ask("planner", system, user_prompt)
+        except MissingMockResponderError:
+            # No provider key and no mock responder → deterministic rule
+            # fallback (SimpleGoalDecomposer) wins, as in the LM Studio era
+            # when no local model was running.
+            logger.info("planner_llm_unavailable_rule_fallback")
+            return None
+        except LLMRequestError as exc:
+            # Transient infrastructure failures propagate: the job-bus retry
+            # policy (AI-COM-06) owns recovery, not the decomposer.
+            logger.warning("planner_llm_api_error", extra={"error": str(exc)})
+            raise
+        return self._parse_output(raw)
 
-            # OpenAI-compatible API returns text in choices[0].message.content
-            output_text = (
-                result_json.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-            )
+    def _parse_output(self, output_text: str) -> List[AtomicTask] | None:
+        """Convert raw LLM text to tasks; None on parse/validation failure."""
+        import json
+        import re
 
-            # Parse JSON returned by the model
-            import json
-            import re
-
+        try:
             # Extract JSON array from the response text
             json_match = re.search(r"\[.*\]", output_text, re.DOTALL)
             if json_match:
@@ -177,19 +174,9 @@ class LLMDecomposerReal:
 
             return tasks
 
-        except (requests.Timeout, requests.ConnectionError, requests.HTTPError):
-            # Transient infrastructure failures propagate: the job-bus retry
-            # policy (AI-COM-06) owns recovery, not the decomposer.
-            raise
         except Exception as e:
-            from utils.logger import get_logger
-
-            logger = get_logger(__name__)
-            response_text = (
-                response.text if "response" in locals() else "No response available"
-            )
             logger.warning(
                 "llm_decomposer_unusable_output",
-                extra={"error": str(e), "response": response_text[:500]},
+                extra={"error": str(e), "response": output_text[:500]},
             )
             return None  # parse/validation failure → caller may retry once

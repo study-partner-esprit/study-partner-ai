@@ -1,33 +1,31 @@
 """
-Reflection generation service using Groq LLM.
+Reflection generation service using the shared LiteLLM client.
 """
 
 import logging
 import json
-import os
 from datetime import datetime, timezone
-from typing import Optional
 
-from groq import Groq
 from pymongo.errors import PyMongoError
 
-from src.config.settings import GROQ_API_KEY, GROQ_MODEL, GROQ_TEMPERATURE, GROQ_MAX_TOKENS
 from src.reflection.database import get_reflections_collection
 from src.reflection.services.trend_service import compute_trends
+from utils.llm_client import (
+    LLMRequestError,
+    MissingMockResponderError,
+    agent_config,
+    ask,
+)
 
 logger = logging.getLogger(__name__)
 
-# Initialize Groq client lazily
-_groq_client: Optional[Groq] = None
-
-
-def get_groq_client() -> Groq:
-    """Get or create Groq client singleton."""
-    global _groq_client
-    if _groq_client is None:
-        _groq_client = Groq(api_key=GROQ_API_KEY)
-        logger.info("Groq client initialized")
-    return _groq_client
+# Persona shown to the `reflection` model (litellm/config.yaml); the data
+# itself is passed as the user prompt via build_prompt().
+REFLECTION_SYSTEM_PROMPT = (
+    "You are an intelligent study coach writing a personalized weekly "
+    "reflection. Be specific, human, and encouraging. Reference the actual "
+    "numbers in your analysis."
+)
 
 
 def build_prompt(user_id: str, trends: dict) -> str:
@@ -93,20 +91,19 @@ def generate_reflection(user_id: str) -> dict:
             logger.warning(f"Trends error or insufficient data for {user_id}: {trends}")
             return trends
 
-        # Build prompt and call Groq LLM
+        # Build prompt and call the shared `reflection` LLM
         prompt = build_prompt(user_id, trends)
-        logger.debug("Calling Groq LLM for reflection generation")
+        logger.debug("Calling reflection LLM for reflection generation")
 
-        client = get_groq_client()
-        response = client.chat.completions.create(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-            messages=[{"role": "user", "content": prompt}],
-            temperature=float(os.getenv("GROQ_TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("GROQ_MAX_TOKENS", "1024"))
-        )
-
-        raw = response.choices[0].message.content.strip()
-        logger.debug(f"Groq response received: {raw[:200]}...")
+        raw = ""
+        try:
+            raw = ask("reflection", REFLECTION_SYSTEM_PROMPT, prompt).strip()
+        except (LLMRequestError, MissingMockResponderError) as e:
+            return {
+                "status": "error",
+                "detail": f"Reflection LLM unavailable: {str(e)}",
+            }
+        logger.debug(f"Reflection response received: {raw[:200]}...")
 
         # Extract JSON from response
         start = raw.find("{")
@@ -119,8 +116,8 @@ def generate_reflection(user_id: str) -> dict:
     except Exception as e:
         import traceback
         error_msg = traceback.format_exc()
-        logger.error(f"Groq error: {error_msg}")
-        return {"status": "error", "detail": f"Groq error: {str(e)}", "traceback": error_msg}
+        logger.error(f"Reflection error: {error_msg}")
+        return {"status": "error", "detail": f"Reflection error: {str(e)}", "traceback": error_msg}
 
     # Build reflection document
     reflection = {
@@ -132,7 +129,7 @@ def generate_reflection(user_id: str) -> dict:
         "weaknesses": parsed.get("weaknesses", []),
         "tips": parsed.get("tips", []),
         "trends_snapshot": trends["trends"],
-        "generated_by": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "generated_by": agent_config("reflection").model,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
