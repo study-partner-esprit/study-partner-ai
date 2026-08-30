@@ -12,11 +12,13 @@ import json
 import threading
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from agents.coach.models.schemas import CoachAction, ScheduleChange
 from messaging.failures import RetryableError, TerminalError
+from messaging.topology import MAX_RETRIES, RETRY_HEADER
 from workers.coach_worker import CoachWorker
 from workers.idempotency import InMemoryIdempotencyStore
 
@@ -165,6 +167,7 @@ async def test_valid_payload_publishes_completed_result():
     assert status == "completed"
     assert error is None
     assert payload["action_type"] == "nudge"
+    assert payload["fallbackUsed"] is False
 
 
 async def test_user_id_in_payload_is_terminal():
@@ -417,3 +420,61 @@ async def test_result_payload_is_json_safe():
     new_start = payload["schedule_changes"]["new_start_time"]
     assert isinstance(new_start, str)
     assert json.loads(json.dumps(payload)) == payload
+
+
+# ------------------------------------------------------- COACH-08 fallback
+
+async def test_retryable_below_max_attempts_propagates():
+    def boom(**kw):
+        raise RetryableError("coach LLM unavailable: upstream timeout")
+
+    worker, _ = make_worker(boom)
+    worker.current_attempt = 0  # underneath MAX_RETRIES → let the policy retry
+
+    env = SimpleNamespace(userId="user-42", correlationId="tr-1")
+    with pytest.raises(RetryableError):
+        await worker.handle({}, env)
+
+
+async def test_final_attempt_falls_back_to_rule_engine():
+    from agents.coach.decision.output_validator import check_coach_output
+    from agents.coach.models.schemas import CoachOutput
+
+    def boom(**kw):
+        raise RetryableError("coach LLM unavailable: quota exceeded")
+
+    worker, orchestrator = make_worker(boom)
+    msg = FakeMessage(envelope({}), headers={RETRY_HEADER: MAX_RETRIES})
+
+    await consume(worker, msg)
+
+    assert msg.acked and not msg.nacked
+    status, payload, error = worker.results[0]
+    assert status == "completed"
+    assert error is None
+    assert payload["fallbackUsed"] is True
+    # no hard rule matched (default state) → guaranteed safe fallback nudge
+    assert payload["action_type"] == "nudge"
+    assert payload["coach_error"]
+    # AC#3 — the fallback decision passes COACH-05/06 validation.
+    assert payload["nudge"] is not None
+    assert check_coach_output(CoachOutput(**payload["nudge"])) == []
+
+
+async def test_final_attempt_dnd_fires_rule_engine_silence():
+    def boom(**kw):
+        raise RetryableError("coach LLM unavailable: connection reset")
+
+    worker, _ = make_worker(boom)
+    msg = FakeMessage(
+        envelope({"do_not_disturb": True}), headers={RETRY_HEADER: MAX_RETRIES}
+    )
+
+    await consume(worker, msg)
+
+    assert msg.acked and not msg.nacked
+    status, payload, error = worker.results[0]
+    assert status == "completed"
+    assert payload["fallbackUsed"] is True
+    assert payload["action_type"] == "silence"
+    assert payload["coach_error"]
