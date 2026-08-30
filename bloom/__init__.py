@@ -3,8 +3,8 @@
 from .taxonomy import (
     BLOOM_LEVELS,
     KNOWLEDGE_TYPES,
-    VERB_MAP,
     UNLOCK_THRESHOLD,
+    VERB_MAP,
     next_level,
 )
 

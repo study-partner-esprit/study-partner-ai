@@ -3,7 +3,7 @@
 import re
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from bloom.taxonomy import BLOOM_LEVELS, KNOWLEDGE_TYPES, VERB_MAP
 
@@ -49,14 +49,25 @@ class LearningObjective(BaseModel):
     Unlike the Node validator (which returns {valid, errors} and never
     throws), this model raises ValidationError on instantiation. Rejection
     logging therefore happens at the call site (wherever
-    LearningObjective(**payload) is invoked), not inside this file — see
-    learning_objective.usage_example.py.
+    LearningObjective(**payload) is invoked) — catch ValidationError there
+    and log e.errors() via utils.logger.get_logger(...).warning(...) before
+    discarding/surfacing the objective. No such call site exists in this
+    repo yet.
+
+    Note on parity scope: "Rules MUST stay identical on both sides" applies
+    to validity (accept/reject outcome), not error reporting. The Node
+    validator accumulates every failing rule into one {valid, errors} list;
+    this model raises on the first ValidationError via Pydantic's normal
+    behavior. A given payload is accepted or rejected identically on both
+    sides, but the error list contents may differ for multi-error payloads.
     """
 
     objective_id: str = Field(
         ..., alias="objectiveId", description="Unique learning objective identifier"
     )
-    topic_id: str = Field(..., alias="topicId", description="Topic this objective belongs to")
+    topic_id: str = Field(
+        ..., alias="topicId", description="Topic this objective belongs to"
+    )
     knowledge_type: str = Field(
         ...,
         alias="knowledgeType",
@@ -65,12 +76,16 @@ class LearningObjective(BaseModel):
     bloom_level: str = Field(
         ..., alias="bloomLevel", description=f"One of: {', '.join(BLOOM_LEVELS)}"
     )
-    verb: str = Field(..., description="Measurable action verb, must match bloom_level's verb map")
-    text: str = Field(..., description="Objective text, max 200 chars, verb near the start")
+    verb: str = Field(
+        ..., description="Measurable action verb, must match bloom_level's verb map"
+    )
+    text: str = Field(
+        ..., description="Objective text, max 200 chars, verb near the start"
+    )
 
-    class Config:
-        populate_by_name = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
                 "objectiveId": "obj_xyz789",
                 "topicId": "topic_linear_equations",
@@ -79,7 +94,8 @@ class LearningObjective(BaseModel):
                 "verb": "Solve",
                 "text": "Solve systems of linear equations using substitution.",
             }
-        }
+        },
+    )
 
     @field_validator("objective_id", "topic_id")
     @classmethod
@@ -92,7 +108,9 @@ class LearningObjective(BaseModel):
     @classmethod
     def _valid_knowledge_type(cls, v: str) -> str:
         if v not in KNOWLEDGE_TYPES:
-            raise ValueError(f"knowledge_type must be one of: {', '.join(KNOWLEDGE_TYPES)}")
+            raise ValueError(
+                f"knowledge_type must be one of: {', '.join(KNOWLEDGE_TYPES)}"
+            )
         return v
 
     @field_validator("bloom_level")
@@ -122,5 +140,7 @@ class LearningObjective(BaseModel):
                 f'verb must be one of: {", ".join(allowed_verbs)} for bloom_level "{self.bloom_level}"'
             )
         if not _starts_with_verb_nearby(self.text, self.verb):
-            raise ValueError(f'verb "{self.verb}" must appear at/near the start of text')
+            raise ValueError(
+                f'verb "{self.verb}" must appear at/near the start of text'
+            )
         return self

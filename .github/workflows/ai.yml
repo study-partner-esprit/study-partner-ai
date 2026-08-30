@@ -28,7 +28,7 @@ jobs:
   lint:
     name: 🔍 Lint & Format Check
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -62,16 +62,18 @@ jobs:
         run: poetry install --with dev
 
       # Black - Code formatting check
+      # NOTE: extended to cover bloom/, models/, tests/ (repo-root modules)
+      # alongside agents/ — previously these were never linted in CI.
       - name: 🎨 Check Black formatting
-        run: poetry run black --check --diff agents/
+        run: poetry run black --check --diff agents/ bloom/ models/ tests/
 
       # Flake8 - Python linting
       - name: 🔍 Run Flake8 linting
-        run: poetry run flake8 agents/ --count --statistics --show-source --max-line-length=88 --extend-ignore=E501,E402
+        run: poetry run flake8 agents/ bloom/ models/ tests/ --count --statistics --show-source --max-line-length=88 --extend-ignore=E501,E402
 
       # isort - Import sorting check
       - name: 📝 Check import sorting (isort)
-        run: poetry run isort --check-only --diff agents/
+        run: poetry run isort --check-only --diff agents/ bloom/ models/ tests/
         continue-on-error: true
 
   # ===========================================================================
@@ -122,13 +124,21 @@ jobs:
       - name: 📥 Install dependencies
         run: poetry install --with dev
 
-      # Run all tests
-      - name: 🧪 Run all tests
+      # Run agents/ tests (existing)
+      - name: 🧪 Run agents tests
         run: |
           cd agents
           poetry run python -m pytest tests/ -v --tb=short --cov=agents --cov-report=xml --cov-report=term-missing
         env:
           PYTHONPATH: ${{ github.workspace }}/agents
+          MONGO_URI: mongodb://localhost:27017
+
+      # NEW: Run repo-root tests (bloom/, models/ parity + schema tests).
+      # pyproject.toml's `pythonpath = "."` already makes `bloom` and
+      # `models` importable, so no extra PYTHONPATH is needed here.
+      - name: 🧪 Run repo-root tests (bloom, models)
+        run: poetry run python -m pytest tests/ -v --tb=short
+        env:
           MONGO_URI: mongodb://localhost:27017
 
       # Upload coverage
@@ -148,7 +158,7 @@ jobs:
     name: 🏗️ Build Package
     runs-on: ubuntu-latest
     needs: test
-    
+
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
@@ -182,11 +192,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'push'
-    
+
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
