@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
 from messaging.failures import RetryableError, TerminalError
+from messaging.topology import MAX_RETRIES, RETRY_HEADER
 from workers.base import BaseAIWorker
 from workers.idempotency import InMemoryIdempotencyStore
 from workers.planner_worker import DEFAULT_AVAILABLE_MINUTES, PlannerWorker
@@ -239,3 +241,78 @@ async def test_lazy_agent_not_built_until_first_handle():
 
     w = CountingWorker(idempotency_store=InMemoryIdempotencyStore())
     assert built["count"] == 0  # constructor did not touch the agent
+
+
+# --------------------------------------------------- PLAN-06 live fallback
+
+def test_decomposer_transient_llm_error_raises_retryable():
+    from unittest.mock import patch
+
+    from agents.planner.decomposition.llm_decomposer_real import LLMDecomposerReal
+    from utils.llm_client import LLMRequestError
+
+    with patch("agents.planner.decomposition.llm_decomposer_real.ask") as mock_ask:
+        mock_ask.side_effect = LLMRequestError("upstream timeout after 30s")
+        with pytest.raises(RetryableError):
+            LLMDecomposerReal().decompose("learn python", [], 120)
+
+
+def test_decomposer_missing_mock_responder_degrades_to_none():
+    from unittest.mock import patch
+
+    from agents.planner.decomposition.llm_decomposer_real import LLMDecomposerReal
+    from utils.llm_client import MissingMockResponderError
+
+    with patch("agents.planner.decomposition.llm_decomposer_real.ask") as mock_ask:
+        mock_ask.side_effect = MissingMockResponderError("no key")
+        assert LLMDecomposerReal()._completion("sys", "user") is None
+
+
+async def test_retryable_below_max_attempts_propagates():
+    def boom(request):
+        raise RetryableError("planner LLM unavailable: connection reset")
+
+    worker, _ = make_worker(boom)
+    worker.current_attempt = 0  # underneath MAX_RETRIES → let the policy retry
+
+    env = SimpleNamespace(userId="user-42", correlationId="tr-1")
+    with pytest.raises(RetryableError):
+        await worker.handle({"goal": "learn python", "available_minutes": 60}, env)
+
+
+async def test_final_attempt_falls_back_to_simple_decomposer():
+    from agents.planner.models.task_graph import AtomicTask
+
+    def boom(request):
+        raise RetryableError("planner LLM unavailable: quota exceeded")
+
+    def simple_decompose(goal, concepts, minutes):
+        return [
+            AtomicTask(
+                id="task-fb",
+                title=f"Study {goal}",
+                description="deterministic fallback decomposition",
+                estimated_minutes=min(minutes, 45),
+                difficulty=0.5,
+                prerequisites=[],
+                is_review=False,
+            )
+        ]
+
+    worker, agent = make_worker(boom)
+    agent.simple_decomposer = SimpleNamespace(decompose=simple_decompose)
+    msg = FakeMessage(
+        envelope({"goal": "learn python", "available_minutes": 60}),
+        headers={RETRY_HEADER: MAX_RETRIES},
+    )
+
+    await consume(worker, msg)
+
+    assert msg.acked and not msg.nacked
+    status, payload, error = worker.results[0]
+    assert status == "completed"
+    assert error is None
+    assert payload["fallbackUsed"] is True
+    tasks = payload["task_graph"]["tasks"]
+    assert len(tasks) == 1
+    assert tasks[0]["title"] == "Study learn python"
