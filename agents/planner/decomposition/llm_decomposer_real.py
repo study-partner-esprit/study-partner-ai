@@ -1,6 +1,7 @@
 from typing import List
 import uuid
 from agents.planner.models.task_graph import AtomicTask
+from messaging.failures import RetryableError
 from security.prompt_guard import wrap_untrusted
 from utils.llm_client import LLMRequestError, MissingMockResponderError, ask
 from utils.logger import get_logger
@@ -82,10 +83,12 @@ class LLMDecomposerReal:
             logger.info("planner_llm_unavailable_rule_fallback")
             return None
         except LLMRequestError as exc:
-            # Transient infrastructure failures propagate: the job-bus retry
-            # policy (AI-COM-06) owns recovery, not the decomposer.
+            # COACH-08 parity: transient timeout/quota/infra failures surface
+            # as RetryableError so the job-bus retry policy (AI-COM-06) owns
+            # recovery, and PlannerWorker falls back to SimpleGoalDecomposer on
+            # the final attempt (PLAN-06). They are never silently swallowed.
             logger.warning("planner_llm_api_error", extra={"error": str(exc)})
-            raise
+            raise RetryableError(f"planner LLM unavailable: {exc}") from exc
         return self._parse_output(raw)
 
     def _parse_output(self, output_text: str) -> List[AtomicTask] | None:
