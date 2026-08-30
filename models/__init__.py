@@ -1,6 +1,6 @@
 """Shared domain models."""
 
-from .task import Task
 from .learning_objective import LearningObjective
+from .task import Task
 
-__all__ = ["Task", "LearningObjective"]
+__all__ = ["LearningObjective", "Task"]
