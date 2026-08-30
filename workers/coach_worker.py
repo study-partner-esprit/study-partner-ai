@@ -19,6 +19,12 @@ inside the RabbitMQ job bus instead of the synchronous HTTP path:
   filter with an LLM-guard fallback, one correction retry, then the job FAILS
   terminal with a sanitized reason
 
+COACH-08: LLM timeout/quota failures surface as RetryableError so the shared
+retry policy (AI-COM-06) owns recovery; on the final attempt the worker falls
+back to the deterministic rule engine (`apply_rules`) and marks the result
+`fallbackUsed: true` (mirrors planner_worker PLAN-06). The fallback action
+still passes COACH-06 validation before it is returned.
+
 COACH-10 moves the Node caller off the legacy HTTP route. COACH-13 will feed
 the bounded `signals` window into the coach context (today the live flattened
 fields are used).
@@ -29,12 +35,16 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
-from messaging.failures import TerminalError
+from messaging.failures import RetryableError, TerminalError, sanitized_error
+from messaging.topology import MAX_RETRIES
 from pydantic import ValidationError
+from utils.logger import get_logger
 from workers.base import BaseAIWorker
 from workers.schemas import CoachRequest
 
 from agents.coach.decision.output_validator import CoachOutputRejectedError
+
+logger = get_logger(__name__)
 
 
 class CoachWorker(BaseAIWorker):
@@ -77,7 +87,15 @@ class CoachWorker(BaseAIWorker):
             # COACH-06: output failed shape/content-policy validation after one
             # correction retry → job FAILED with a sanitized reason.
             raise TerminalError(str(exc)) from exc
-        return self._coach_payload(action)
+        except RetryableError as exc:
+            # COACH-08: underneath MAX_RETRIES the shared retry policy owns
+            # recovery (NACK + TTL'd delay queues). On the final attempt the
+            # job is NOT dead-lettered — it falls back to the deterministic
+            # rule engine and still COMPLETES.
+            if getattr(self, "current_attempt", 0) >= MAX_RETRIES:
+                return await self._fallback_result(request, envelope.userId, exc)
+            raise
+        return self._coach_payload(action, fallback_used=False)
 
     # ------------------------------------------------------------ internals
 
@@ -89,17 +107,108 @@ class CoachWorker(BaseAIWorker):
         except ValidationError as exc:
             raise TerminalError(f"invalid coach request: {exc}") from exc
 
-    def _coach_payload(self, action: Any) -> Dict[str, Any]:
+    async def _fallback_result(
+        self, request: CoachRequest, user_id: str, cause: Exception
+    ) -> Dict[str, Any]:
+        """Final-attempt rule-engine fallback (COACH-08).
+
+        Mirrors planner_worker._fallback_result (PLAN-06): after retries are
+        exhausted, produce a deterministic, validated decision instead of
+        dead-lettering. The returned action still passes COACH-06 validation
+        and is COMPLETED with `fallbackUsed: true`.
+        """
+        from datetime import datetime, timezone
+
+        from agents.coach.decision.output_parser import safe_fallback_nudge
+        from agents.coach.decision.output_validator import (
+            check_coach_output,
+            sanitize_nudge,
+        )
+        from agents.coach.models.schemas import (
+            CoachAction,
+            CoachInput,
+            FatigueState,
+            FocusState,
+        )
+        from agents.coach.rules.rule_engine import apply_rules
+
+        current_time = request.current_time or datetime.now(timezone.utc)
+        input_data = CoachInput(
+            scheduled_tasks=[],
+            current_time=current_time,
+            focus_state=FocusState(
+                state=request.focus_state or "Drifting",
+                score=request.focus_score if request.focus_score is not None else 0.5,
+            ),
+            fatigue_state=FatigueState(
+                state=request.fatigue_state or "Moderate",
+                score=request.fatigue_score if request.fatigue_score is not None else 0.3,
+            ),
+            affective_state="engaged",
+            ignored_count=request.ignored_count,
+            do_not_disturb=request.do_not_disturb,
+            is_late=False,
+            signals=None,
+        )
+
+        action = apply_rules(input_data)
+        if action is None:
+            # No hard rule matched (the same rules short-circuited inside
+            # run_coach, which is why the LLM ran in the first place).
+            # Guarantee a decision with the fixed COACH-05 fallback nudge
+            # instead of dead-lettering.
+            nudge = safe_fallback_nudge()
+            action = CoachAction(
+                action_type="nudge",
+                message=nudge.nudge_text,
+                reasoning=(
+                    "Coach LLM unavailable after retries; used a safe "
+                    "rule-engine fallback nudge."
+                ),
+                nudge=nudge,
+                coach_error=sanitized_error(cause),
+            )
+
+        # AC#3 — the fallback decision still passes COACH-05/06 validation.
+        if action.nudge is not None:
+            action.nudge = sanitize_nudge(action.nudge)
+            problems = check_coach_output(action.nudge)
+            if problems:
+                safe_nudge = safe_fallback_nudge()
+                action.nudge = safe_nudge
+                action.message = None
+                action.coach_error = (
+                    "fallback decision rejected by coach validation: "
+                    + "; ".join(problems[:3])
+                )
+        else:
+            action.coach_error = action.coach_error or sanitized_error(cause)
+
+        logger.info(
+            "coach_rule_fallback_used",
+            extra={
+                "user_id": user_id,
+                "action_type": action.action_type,
+                "coach_error": action.coach_error,
+            },
+        )
+        return self._coach_payload(action, fallback_used=True)
+
+    def _coach_payload(self, action: Any, fallback_used: bool = False) -> Dict[str, Any]:
         from agents.coach.models.schemas import CoachAction
 
         if isinstance(action, CoachAction):
-            return action.model_dump(mode="json")
-        if isinstance(action, dict):
+            result = action.model_dump(mode="json")
+        elif isinstance(action, dict):
             try:
-                return CoachAction.model_validate(action).model_dump(mode="json")
+                result = CoachAction.model_validate(action).model_dump(mode="json")
             except Exception as exc:
                 raise TerminalError(f"coach produced invalid action: {exc}") from exc
-        raise TerminalError("coach produced an invalid action")
+        else:
+            raise TerminalError("coach produced an invalid action")
+        # COACH-08 AC#4: the result carries whether the rule engine produced it.
+        result["fallbackUsed"] = bool(fallback_used)
+        return result
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run entrypoint
