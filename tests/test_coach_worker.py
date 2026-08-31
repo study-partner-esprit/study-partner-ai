@@ -99,6 +99,7 @@ class FakeCoachOrchestrator:
         live_fatigue_score=None,
         live_fatigue_state=None,
         session_stats=None,
+        session_id=None,
     ):
         self.calls.append(
             {
@@ -112,6 +113,7 @@ class FakeCoachOrchestrator:
                 "live_fatigue_score": live_fatigue_score,
                 "live_fatigue_state": live_fatigue_state,
                 "session_stats": session_stats,
+                "session_id": session_id,
             }
         )
         return self.behaviour(**self.calls[-1])

@@ -228,6 +228,7 @@ class CoachRequest(BaseModel):
         """Flatten onto run_coach kwargs; user identity is injected by the
         worker from the envelope, never from the payload."""
         return {
+            "session_id": self.session_id,
             "current_time": self.current_time,
             "ignored_count": self.ignored_count,
             "do_not_disturb": self.do_not_disturb,
