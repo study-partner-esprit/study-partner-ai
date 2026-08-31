@@ -25,8 +25,8 @@ EVALUATOR_SYSTEM_PROMPT = (
 class GeminiClient:
     """Evaluator LLM client backed by the shared `evaluator` model group.
 
-    Keeps the historical name and public interface so consumers (EvaluatorAgent,
-    the Gradio app, and standalone scripts) are unaffected by the migration.
+    Keeps the historical name and public interface so consumers (EvaluatorAgent
+    and standalone scripts) are unaffected by the migration.
     """
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, use_fallback: bool = True):
@@ -114,7 +114,7 @@ class GeminiClient:
         attempt_number: int = 1,
     ) -> str:
         """Generate a validated Socratic question with quality checks and template fallback."""
-        from src.evaluator.prompts import generate_template_question
+        from agents.evaluator.prompts import generate_template_question
 
         key_concepts = key_concepts or []
 
