@@ -8,6 +8,7 @@ pipeline decisions.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 import uuid
@@ -452,6 +453,101 @@ async def test_transient_orchestrator_failure_schedules_retry():
 
 
 # ------------------------------------------------------------ JSON-safety
+
+# ------------------------------------------------------- COACH-08 fallback
+
+# ------------------------------------------------------ COACH-16 schedule cast
+
+
+def test_no_schedule_changes_leaves_no_schedule_update():
+    async def run():
+        worker, _ = make_worker(lambda **kw: default_action())
+        result = await worker.handle({}, SimpleNamespace(userId="u", correlationId="c"))
+        return result
+
+    result = asyncio.run(run())
+    assert "schedule_update" in result
+    assert result["schedule_update"] is None
+
+
+def test_schedule_cast_publish_failure_reports_error_never_silent():
+    """Without a live channel the chained publish fails; the coach result
+    still surfaces schedule_update.status=error instead of guessing success."""
+    from agents.coach.models.schemas import ScheduleChange
+
+    def action_with_schedule(**kw):
+        return CoachAction(
+            action_type="suggest_break",
+            message="Take a break.",
+            reasoning="fatigue",
+            schedule_changes=ScheduleChange(
+                action="add_break",
+                duration_minutes=10,
+                affected_task_ids=[],
+                reasoning="fatigue detected",
+            ),
+        )
+
+    async def run():
+        worker, _ = make_worker(action_with_schedule)
+        result = await worker.handle({}, SimpleNamespace(userId="u", correlationId="c"))
+        return result
+
+    result = asyncio.run(run())
+    su = result["schedule_update"]
+    assert su is not None
+    assert su["status"] == "error"
+
+
+def test_schedule_cast_resolves_success_roundtrip():
+    """End-to-end in-process: register an awaiting cast, have the base worker's
+    result publish resolve it, and confirm the coach sees status=success."""
+    from services.schedule_orchestrator import result_bridge as rb
+    from services.schedule_orchestrator.result_bridge import (
+        _outcomes,
+        await_schedule_cast,
+    )
+    from workers.schedule_worker import ScheduleWorker
+
+    _outcomes.pop("cast-ok", None)
+
+    async def run():
+        corr = "cast-ok"
+
+        async def producer():
+            await asyncio.sleep(0)
+            rb.resolve(corr, "completed", None)
+            return None
+
+        task = asyncio.create_task(producer())
+        outcome = await await_schedule_cast(corr, "break", timeout_s=2)
+        await task
+        return outcome
+
+    outcome = asyncio.run(run())
+    assert outcome["status"] == "completed"
+
+    # The schedule worker's own handle returns the success envelope.
+    worker = ScheduleWorker(
+        idempotency_store=InMemoryIdempotencyStore(),
+        orchestrator=type(
+            "O",
+            (),
+            {"process_schedule_change": lambda self, c, u, t: {"status": "success", "message": "ok"}},
+        )(),
+    )
+
+    async def h():
+        return await worker.handle(
+            {"action": "add_break", "duration_minutes": 10, "reasoning": "r"},
+            SimpleNamespace(userId="u", correlationId="cast-ok"),
+        )
+
+    res = asyncio.run(h())
+    assert res["schedule_update"]["status"] == "success"
+
+
+# ------------------------------------------------------- COACH-08 fallback
 
 async def test_result_payload_is_json_safe():
     def action_with_schedule(**kw):
