@@ -28,6 +28,7 @@ from agents.evaluator.schemas import (
     TaskEvaluationContext,
     EvaluationSession,
     SessionState,
+    build_evaluation_output,
 )
 from agents.evaluator.scoring import MasteryScorer
 
@@ -184,6 +185,15 @@ class EvaluatorAgent:
                     "misconceptions": analysis.misconceptions,
                 })
                 self.sessions[session_id] = session
+                output = build_evaluation_output(
+                    session_id=session_id,
+                    analysis=analysis,
+                    mastery_score=mastery_score,
+                    session_status="FAILED",
+                    student_answer=user_answer,
+                    key_concepts=session.context.key_concepts,
+                )
+                result["evaluation_output"] = output.model_dump()
                 return result
 
         # Determine state by scorer
@@ -229,6 +239,18 @@ class EvaluatorAgent:
                 "next_question": next_question,
                 "message": f"Good effort! Let's explore deeper. Score: {mastery_score:.2f}",
             })
+
+        # EVAL-04: attach a strict, validated EvaluationOutput to every step result.
+        output = build_evaluation_output(
+            session_id=session_id,
+            analysis=analysis,
+            mastery_score=mastery_score,
+            session_status=result.get("state", "CONTINUE"),
+            student_answer=user_answer,
+            key_concepts=session.context.key_concepts,
+            next_question=result.get("next_question"),
+        )
+        result["evaluation_output"] = output.model_dump()
 
         session.updated_at = datetime.now(timezone.utc)
         self.sessions[session_id] = session
