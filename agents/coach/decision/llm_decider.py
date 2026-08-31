@@ -232,6 +232,7 @@ def decide_with_llm(
         "do_not_disturb": input_data.do_not_disturb,
         "is_late": input_data.is_late,
         "current_time": _iso(input_data.current_time),
+        "session_stats": _session_stats_line(input_data.session_stats),
     }
     tasks = [_task_line(t) for t in input_data.scheduled_tasks]
 
@@ -353,6 +354,24 @@ def _iso(value):
     if isinstance(value, datetime):
         return value.isoformat()
     return value
+
+
+def _session_stats_line(stats):
+    """COACH-13: a compact, trusted stats block for the LLM state.
+
+    Stats are system-derived and bounded (SessionStats), so they are rendered
+    verbatim inside the trusted state block. Absent/stale stats degrade to a
+    literal placeholder instead of failing the prompt build.
+    """
+    if stats is None:
+        return "not provided (defaults apply)"
+    return {
+        "progress_pct": stats.progress_pct,
+        "minutes_elapsed": stats.minutes_elapsed,
+        "task_switches": stats.task_switches,
+        "break_count": stats.break_count,
+        "current_streak_days": stats.current_streak_days,
+    }
 
 
 def _task_line(task: ScheduledTask) -> dict:
