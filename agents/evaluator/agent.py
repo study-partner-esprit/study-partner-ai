@@ -22,6 +22,12 @@ from agents.evaluator.prompts import (
     has_generic_question_terms,
     question_contains_concept,
     concept_coverage,
+    parse_analysis_response,
+)
+from agents.evaluator.validation import (
+    validate_analysis_output,
+    AnalysisValidationError,
+    build_failure_analysis,
 )
 from agents.evaluator.schemas import (
     LLMAnalysisResponse,
@@ -460,6 +466,32 @@ class EvaluatorAgent:
 
             # Parse structured response from feedback text
             parsed_response = parse_analysis_response(feedback_text)
+
+            # EVAL-06: validate the parsed output; one correction retry on failure
+            is_valid, reason = validate_analysis_output(
+                parsed_response, student_answer, session.context.key_concepts
+            )
+            if not is_valid:
+                logger.warning(
+                    f"[{session.session_id}] EVAL-06 validation failed: {reason}. "
+                    f"Full LLM response: {feedback_text!r}"
+                )
+                # One correction retry
+                feedback_text = self.llm.generate(prompt, max_tokens=150)
+                parsed_response = parse_analysis_response(feedback_text)
+                is_valid, reason = validate_analysis_output(
+                    parsed_response, student_answer, session.context.key_concepts
+                )
+                if not is_valid:
+                    logger.error(
+                        f"[{session.session_id}] EVAL-06 retry also failed: {reason}. "
+                        f"Full LLM response: {feedback_text!r}"
+                    )
+                    last_valid_score = getattr(session, 'mastery_score', 0.5) or 0.5
+                    analysis, mastery_score = build_failure_analysis(student_answer, reason)
+                    mastery_score = max(0.0, min(0.3, last_valid_score))
+                    session.analysis_history.append(analysis)
+                    return analysis, mastery_score
 
             # Extract and clean missing concepts from parsed response
             raw_missing = parsed_response.get("missing_concepts", [])
