@@ -6,6 +6,7 @@ Run with:
 """
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,10 +17,29 @@ from agents.coach.models.schemas import (
     FocusState,
     FatigueState,
 )
+from agents.coach.services.coach_history_repository import (
+    COACH_ACTIONS_TRACE_INDEX,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+class _FakeCol:
+    """Stateful stand-in for a pymongo Collection (keyed on the filter)."""
+
+    def __init__(self):
+        self.docs = {}
+
+    def update_one(self, flt, update, upsert=True):
+        key = flt["trace_id"]
+        if key in self.docs:
+            return SimpleNamespace(matched_count=1, upserted_id=None)
+        if upsert:
+            self.docs[key] = dict(update["$setOnInsert"])
+            return SimpleNamespace(matched_count=0, upserted_id="obj-1")
+        raise AssertionError("upsert must be enabled")
 
 
 def _make_coach_input(**overrides):
@@ -63,18 +83,66 @@ class TestCoachHistoryRepository:
 
     def test_save_action_inserts_document(self):
         col = MagicMock()
+        col.update_one.return_value = SimpleNamespace(
+            matched_count=0, upserted_id="obj-1"
+        )
         repo = self._make_repo(col)
 
         action = _make_action()
         coach_input = _make_coach_input()
 
-        repo.save_action("user_1", action, coach_input, trace_id="t-123")
+        repo.save_action(
+            "user_1", action, coach_input, trace_id="t-123", correlation_id="c-123"
+        )
 
-        col.insert_one.assert_called_once()
-        doc = col.insert_one.call_args[0][0]
+        col.update_one.assert_called_once()
+        flt, update, kwargs = (
+            col.update_one.call_args[0][0],
+            col.update_one.call_args[0][1],
+            col.update_one.call_args[1],
+        )
+        assert flt == {"trace_id": "t-123"}
+        assert kwargs.get("upsert") is True
+        doc = update["$setOnInsert"]
         assert doc["user_id"] == "user_1"
         assert doc["action_type"] == "nudge"
         assert doc["trace_id"] == "t-123"
+        assert doc["correlation_id"] == "c-123"
+
+    def test_save_action_idempotent_by_trace_id(self):
+        col = _FakeCol()
+        repo = self._make_repo(col)
+        coach_input = _make_coach_input()
+
+        repo.save_action("user_1", _make_action(), coach_input, trace_id="job-1")
+        # Same correlation id redelivered (retry succeeded after an earlier
+        # attempt) → no duplicate row; the first write wins.
+        repo.save_action(
+            "user_1",
+            _make_action(action_type="encourage"),
+            coach_input,
+            trace_id="job-1",
+            correlation_id="job-1",
+        )
+
+        assert len(col.docs) == 1
+        assert col.docs["job-1"]["action_type"] == "nudge"
+        assert col.docs["job-1"]["correlation_id"] == "job-1"
+
+        repo.save_action("user_1", _make_action(), coach_input, trace_id="job-2")
+        assert len(col.docs) == 2
+
+    def test_ensures_unique_trace_id_index(self):
+        col = MagicMock()
+        repo = self._make_repo(col)
+
+        repo._ensure_index()
+
+        col.create_index.assert_called_once()
+        args, kwargs = col.create_index.call_args
+        assert args[0] == [("trace_id", 1)]
+        assert kwargs.get("unique") is True
+        assert kwargs.get("name") == COACH_ACTIONS_TRACE_INDEX
 
     def test_save_action_no_db_silently_skips(self):
         from agents.coach.services.coach_history_repository import (

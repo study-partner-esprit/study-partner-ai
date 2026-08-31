@@ -8,7 +8,7 @@ Parallel I/O via ThreadPoolExecutor; trace_id propagation throughout.
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from agents.coach.agent import run_coach
 from agents.coach.models.schemas import (
@@ -71,6 +71,12 @@ class AIOrchestrator:
             trace_id = str(uuid.uuid4())
         if current_time is None:
             current_time = datetime.now()
+        elif current_time.tzinfo is not None:
+            # COACH-11: bus payloads carry an offset-aware ISO instant (e.g.
+            # Node `.toISOString()`). Downstream comparisons (planner tasks,
+            # pymongo timestamps) use naive UTC, so normalize here to avoid
+            # naive/aware TypeError during is_late / staleness checks.
+            current_time = current_time.astimezone(timezone.utc).replace(tzinfo=None)
 
         logger.info(
             "orchestrator_run_coach_start",

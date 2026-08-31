@@ -478,3 +478,65 @@ async def test_final_attempt_dnd_fires_rule_engine_silence():
     assert payload["fallbackUsed"] is True
     assert payload["action_type"] == "silence"
     assert payload["coach_error"]
+
+
+# ------------------------------------------------------- COACH-09 persistence
+
+class FakeCoachHistoryRepo:
+    def __init__(self):
+        self.calls = []
+
+    def save_action(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+
+
+async def test_job_completion_persists_nudge_by_correlation_id():
+    worker, _ = make_worker()
+    fake = FakeCoachHistoryRepo()
+    worker._history_repo = fake
+
+    await consume(worker, FakeMessage(envelope({})))
+
+    assert worker.results[0][0] == "completed"
+    assert len(fake.calls) == 1
+    args, kwargs = fake.calls[0]
+    user_id, action, _input, = args[:3]
+    assert user_id == "user-42"
+    assert action.action_type == "nudge"
+    assert kwargs["trace_id"] == "0f8e2d1a-3b4c-4d6e-8f80-91a2b3c4d5e6"
+    assert kwargs["correlation_id"] == "0f8e2d1a-3b4c-4d6e-8f80-91a2b3c4d5e6"
+
+
+async def test_fallback_path_persists_nudge_to_history():
+    def boom(**kw):
+        raise RetryableError("coach LLM unavailable: quota exceeded")
+
+    worker, _ = make_worker(boom)
+    fake = FakeCoachHistoryRepo()
+    worker._history_repo = fake
+    msg = FakeMessage(envelope({}), headers={RETRY_HEADER: MAX_RETRIES})
+
+    await consume(worker, msg)
+
+    assert worker.results[0][1]["fallbackUsed"] is True
+    assert len(fake.calls) == 1
+    user_id, action, _input = fake.calls[0][0][:3]
+    assert user_id == "user-42"
+    assert action.action_type == "nudge"
+    assert fake.calls[0][1]["trace_id"] == "0f8e2d1a-3b4c-4d6e-8f80-91a2b3c4d5e6"
+
+
+async def test_failure_path_persists_nothing():
+    def boom(**kw):
+        raise RetryableError("coach LLM unavailable: upstream timeout")
+
+    worker, _ = make_worker(boom)
+    fake = FakeCoachHistoryRepo()
+    worker._history_repo = fake
+    worker.current_attempt = 0  # underneath MAX_RETRIES → will re-raise
+
+    env = SimpleNamespace(userId="user-42", correlationId="tr-1")
+    with pytest.raises(RetryableError):
+        await worker.handle({}, env)
+
+    assert fake.calls == []
