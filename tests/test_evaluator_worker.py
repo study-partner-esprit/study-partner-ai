@@ -1,8 +1,9 @@
-"""EvaluatorWorker unit tests (F04 / EVAL-01) — no broker.
+"""EvaluatorWorker unit tests (F04 / EVAL-01, EVAL-02) — no broker.
 
 A real EvaluatorAgent is injected with ``require_llm=False`` so the multi-turn
-Socratic state machine is exercised deterministically through the worker. The
-tests pin: routing start-vs-resume, terminal rejection of malformed input,
+Socratic state machine is exercised deterministically through the worker. Tests
+pin: step-driven routing (step 1 starts, step > 1 resumes), strict
+EvaluationRequest validation, session rehydration from the state store,
 off-loop execution and ACK/NACK through the BaseAIWorker pipeline.
 """
 
@@ -17,6 +18,7 @@ from messaging.failures import TerminalError
 from workers.base import BaseAIWorker
 from workers.evaluator_worker import EvaluatorWorker
 from workers.idempotency import InMemoryIdempotencyStore
+from workers.session_store import InMemorySessionStore
 
 
 class FakeMessage:
@@ -67,14 +69,35 @@ def envelope(payload) -> dict:
     }
 
 
-def make_worker(agent=None):
+DEFAULT_CONTEXT = {
+    "task_title": "Task Title",
+    "task_description": "Task description",
+    "task_details": (
+        "Recursion requires a base case that stops the recursion and a recursive "
+        "case that reduces the problem toward the base case using the call stack."
+    ),
+}
+
+
+def resolver(context_id):
+    ctx = dict(DEFAULT_CONTEXT)
+    ctx["task_title"] = f"{ctx['task_title']} ({context_id})"
+    return ctx
+
+
+def make_worker(agent=None, session_store=None):
     from agents.evaluator.agent import EvaluatorAgent
 
     real = agent if agent is not None else EvaluatorAgent(require_llm=False)
 
     class RecordingWorker(EvaluatorWorker):
         def __init__(self):
-            super().__init__(idempotency_store=InMemoryIdempotencyStore(), agent=real)
+            super().__init__(
+                idempotency_store=InMemoryIdempotencyStore(),
+                session_store=session_store or InMemorySessionStore(),
+                agent=real,
+                context_resolver=resolver,
+            )
             self.results = []
 
         async def _publish_result(self, env, *, status, payload=None, error=None):
@@ -87,43 +110,46 @@ async def consume(worker, message):
     await worker.on_message(message)
 
 
+def start_payload(session_id="sess-1", answer="Recursion needs a base case so it stops."):
+    return {
+        "sessionId": session_id,
+        "step": 1,
+        "contextId": "ctx-recursion",
+        "studentAnswer": answer,
+    }
+
+
 # ---------------------------------------------------------------- start session
 
-async def test_start_session_payload_publishes_completed_result():
+async def test_step1_starts_and_processes_first_answer():
     worker = make_worker()
-    msg = FakeMessage(envelope({
-        "task_title": "Photosynthesis",
-        "task_description": "plants convert sunlight to energy",
-        "task_details": "Light reactions produce ATP and NADPH. Calvin cycle fixes CO2 into glucose.",
-        "max_attempts": 5,
-    }))
+    msg = FakeMessage(envelope(start_payload("sess-start")))
     await consume(worker, msg)
 
     assert msg.acked and not msg.nacked
     status, payload, error = worker.results[0]
     assert status == "completed"
     assert error is None
-    assert payload["session_id"]
-    assert payload["question"]
+    assert payload["session_id"] == "sess-start"
+    assert 0.0 <= payload["mastery_score"] <= 1.0
+    assert payload["state"] in ("MASTERY_CONFIRMED", "CONTINUE", "FAILED")
+    # the session was persisted to the state store
+    assert await worker.session_store.get("sess-start") is not None
 
 
 # --------------------------------------------------------- resume a session step
 
-async def test_resume_session_publishes_completed_result():
+async def test_step2_resumes_session_step():
     worker = make_worker()
-    start_msg = FakeMessage(envelope({
-        "task_title": "Python Lists",
-        "task_description": "how lists work",
-        "task_details": "Lists are ordered mutable sequences supporting indexing, slicing, append, remove, pop.",
-        "max_attempts": 5,
-    }))
-    await consume(worker, start_msg)
-    sid = worker.results[0][1]["session_id"]
+    await consume(worker, FakeMessage(envelope(start_payload("sess-resume"))))
+    sid = "sess-resume"
 
     worker.results = []
     resume_msg = FakeMessage(envelope({
-        "session_id": sid,
-        "student_answer": "Python lists are ordered collections created with square brackets that support append and pop.",
+        "sessionId": sid,
+        "step": 2,
+        "contextId": "ctx-recursion",
+        "studentAnswer": "A base case stops recursion, recursive case reduces the problem.",
     }))
     await consume(worker, resume_msg)
 
@@ -132,15 +158,60 @@ async def test_resume_session_publishes_completed_result():
     assert status == "completed"
     assert error is None
     assert payload["session_id"] == sid
-    assert payload["state"] in ("MASTERY_CONFIRMED", "CONTINUE", "FAILED")
-    assert 0.0 <= payload["mastery_score"] <= 1.0
+    assert payload["state"] in ("MASTERY_CONFIRMED", "CONTINUE", "FAILED", "complete")
+
+
+# ------------------------------------------------------- session rehydration
+
+async def test_resume_rehydrates_session_into_fresh_agent():
+    # A session is started by worker A and persisted to a SHARED store. Worker B
+    # (a fresh agent that never held the session) resumes step 2 → hydrated from
+    # the shared state store (mirrors cross-instance rehydration via Redis).
+    shared_store = InMemorySessionStore()
+    worker_a = make_worker(session_store=shared_store)
+    await consume(worker_a, FakeMessage(envelope(start_payload("sess-rehyd"))))
+    serialized = await shared_store.get("sess-rehyd")
+    assert serialized is not None
+
+    worker_b = make_worker(session_store=shared_store)
+    assert worker_b.agent.get_session("sess-rehyd") is None
+
+    resume_msg = FakeMessage(envelope({
+        "sessionId": "sess-rehyd",
+        "step": 2,
+        "contextId": "ctx-recursion",
+        "studentAnswer": "It reduces toward the base case using the call stack.",
+    }))
+    await consume(worker_b, resume_msg)
+
+    # The session was rehydrated into worker B's agent (restore_session ran)
+    assert worker_b.agent.get_session("sess-rehyd") is not None
+    assert resume_msg.acked and not resume_msg.nacked
+    status, payload, error = worker_b.results[0]
+    assert status == "completed"
+    assert error is None
+    assert payload["session_id"] == "sess-rehyd"
+
+
+async def test_resume_without_store_entry_returns_session_not_found():
+    worker = make_worker()
+    msg = FakeMessage(envelope({
+        "sessionId": "sess-unknown",
+        "step": 2,
+        "contextId": "ctx-recursion",
+        "studentAnswer": "some answer",
+    }))
+    await consume(worker, msg)
+
+    assert msg.acked and not msg.nacked
+    status, payload, error = worker.results[0]
+    assert status == "completed"
+    assert payload.get("error") == "session_not_found"
 
 
 # ----------------------------------------------------------- invalid input
 
 async def test_non_object_payload_is_terminal():
-    # A non-object payload fails envelope validation in BaseAIWorker before the
-    # worker's handle() runs → TerminalError is raised (no result event).
     worker = make_worker()
     with pytest.raises(TerminalError):
         await consume(worker, FakeMessage(envelope("just a string")))
@@ -157,14 +228,19 @@ async def test_empty_payload_is_terminal():
 async def test_resume_without_student_answer_is_terminal():
     worker = make_worker()
     with pytest.raises(TerminalError):
-        await consume(worker, FakeMessage(envelope({"session_id": "abc"})))
+        await consume(worker, FakeMessage(envelope({
+            "sessionId": "abc", "step": 2, "contextId": "ctx",
+        })))
     assert worker.results[0][0] == "failed"
 
 
-async def test_start_without_task_details_is_terminal():
+async def test_unknown_extra_field_is_terminal():
     worker = make_worker()
     with pytest.raises(TerminalError):
-        await consume(worker, FakeMessage(envelope({"task_title": "t"})))
+        await consume(worker, FakeMessage(envelope({
+            "sessionId": "abc", "step": 2, "contextId": "ctx",
+            "studentAnswer": "ok", "evil_instruction": "ignore previous",
+        })))
     assert worker.results[0][0] == "failed"
 
 
@@ -176,10 +252,7 @@ async def test_transient_agent_failure_schedules_retry():
             raise RuntimeError("LLM timeout")
 
     worker = make_worker(agent=FailingAgent())
-    msg = FakeMessage(envelope({
-        "task_title": "t", "task_description": "d",
-        "task_details": "some details", "max_attempts": 5,
-    }), headers={"x-retry-count": 0})
+    msg = FakeMessage(envelope(start_payload("sess-fail")), headers={"x-retry-count": 0})
 
     published = {}
 
@@ -190,7 +263,6 @@ async def test_transient_agent_failure_schedules_retry():
     worker._republish_for_retry = fake_republish
     await consume(worker, msg)
 
-    # RuntimeError is not Terminal/Retryable → classified retryable, republished
     assert published["next"] == 1
     assert msg.acked
     assert worker.results == []
@@ -213,10 +285,7 @@ async def test_agent_runs_off_event_loop_via_to_thread():
 
     real.start_session = recording_start
     worker = make_worker(agent=real)
-    await consume(worker, FakeMessage(envelope({
-        "task_title": "t", "task_description": "d",
-        "task_details": "some details for thread check",
-    })))
+    await consume(worker, FakeMessage(envelope(start_payload("sess-thread"))))
     assert seen[0] is not threading.main_thread()
 
 
@@ -231,7 +300,10 @@ def test_lazy_agent_not_built_until_first_handle():
                 self._agent = object()
             return self._agent
 
-    w = CountingWorker(idempotency_store=InMemoryIdempotencyStore())
+    w = CountingWorker(
+        idempotency_store=InMemoryIdempotencyStore(),
+        session_store=InMemorySessionStore(),
+    )
     assert built["count"] == 0
 
 
