@@ -21,6 +21,7 @@ AI_JOB_TYPES = frozenset(
         "study.eval.step",
         "study.search.query",
         "study.ingest.course",
+        "study.schedule.apply",
     ]
 )
 

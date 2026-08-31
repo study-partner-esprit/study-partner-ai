@@ -40,6 +40,12 @@ SESSION_STATS_MAX_TASK_SWITCHES = 50
 SESSION_STATS_MAX_BREAK_COUNT = 20
 SESSION_STATS_MAX_STREAK_DAYS = 365
 
+# Schedule apply bounds (COACH-16) — keep in sync with payloadSchemas.js
+SCHEDULE_MAX_AFFECTED_TASK_IDS = 20
+SCHEDULE_MAX_DURATION_MINUTES = 24 * 60
+SCHEDULE_REASONING_MAX_CHARS = 500
+SCHEDULE_MAX_PAYLOAD_BYTES = 4 * 1024  # schedule apply payload is tiny
+
 
 class PlannerRequest(BaseModel):
     """Validated payload for `study.plan.generate` jobs."""
@@ -240,3 +246,71 @@ class CoachRequest(BaseModel):
                 self.session_stats.model_dump() if self.session_stats else None
             ),
         }
+
+
+class ScheduleApplyRequest(BaseModel):
+    """Validated payload for `study.schedule.apply` jobs (COACH-16).
+
+    Carries the coach's requested schedule change through the job bus so it is
+    applied transactionally by ScheduleWorker — never direct HTTP. Mirrors
+    `agents.coach.models.schemas.ScheduleChange` and the JS
+    `payloadSchemas.js` schedule validator; bounds identical on all three so
+    the orchestrator rejects pre-publish exactly what the worker rejects
+    post-delivery. `userId` is deliberately absent — it is only ever taken
+    from the authenticated envelope.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal[
+        "add_break",
+        "extend_task",
+        "reschedule_task",
+        "cancel_task",
+        "suspend_session",
+    ]
+    duration_minutes: Optional[int] = Field(
+        default=None, ge=1, le=SCHEDULE_MAX_DURATION_MINUTES
+    )
+    new_start_time: Optional[datetime] = None
+    affected_task_ids: List[str] = Field(
+        default_factory=list, max_length=SCHEDULE_MAX_AFFECTED_TASK_IDS
+    )
+    reasoning: str = Field(default="", max_length=SCHEDULE_REASONING_MAX_CHARS)
+
+    @field_validator(
+        "duration_minutes", "affected_task_ids", mode="before"
+    )
+    @classmethod
+    def _no_boolean_ints(cls, v):
+        if isinstance(v, list):
+            for item in v:
+                if type(item) is bool:
+                    raise ValueError("affected_task_ids must be strings")
+            return v
+        if type(v) is bool:
+            raise ValueError("must be an integer, not a boolean")
+        return v
+
+    @field_validator("affected_task_ids", mode="after")
+    @classmethod
+    def _ids_not_blank(cls, v: List[str]) -> List[str]:
+        for tid in v:
+            if not tid or not tid.strip():
+                raise ValueError("affected_task_ids must be non-empty strings")
+        return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def _payload_size_capped(cls, value):
+        if isinstance(value, dict):
+            try:
+                size = len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
+            except TypeError:
+                size = 0  # datetime not JSON-serializable at validate time
+            if size > SCHEDULE_MAX_PAYLOAD_BYTES:
+                raise ValueError(
+                    f"payload exceeds {SCHEDULE_MAX_PAYLOAD_BYTES} bytes "
+                    f"(got {size})"
+                )
+        return value

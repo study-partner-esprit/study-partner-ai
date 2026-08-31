@@ -115,10 +115,70 @@ class CoachWorker(BaseAIWorker):
                 raise
             action = await self._fallback_action(request, envelope.userId, exc)
             fallback_used = True
+        # COACH-16: if the decision carries schedule_changes, dispatch a
+        # transactional study.schedule.apply job and await its outcome so the
+        # coach result reports the true apply status (never silent).
+        schedule_update = None
+        if action is not None and action.schedule_changes is not None:
+            schedule_update = await self._dispatch_schedule_apply(
+                action.schedule_changes, envelope
+            )
         # COACH-09 AC#1/#2: persist on job completion, idempotent by
         # correlationId. AC#3: failed jobs never reach this line.
         await self._persist_result(request, envelope, action)
-        return self._coach_payload(action, fallback_used=fallback_used)
+        return self._coach_payload(
+            action, fallback_used=fallback_used, schedule_update=schedule_update
+        )
+
+    async def _dispatch_schedule_apply(self, schedule_change, envelope) -> dict:
+        """COACH-16: publish the apply job and wait for the worker to settle.
+
+        Returns a `{status, detail}` dict for the coach result. If the cast
+        cannot be delivered or times out, status defaults to `error` — the
+        coach result is never silent about a failed schedule update.
+        """
+        from agents.coach.models.schemas import ScheduleChange
+        from workers.schemas import ScheduleApplyRequest
+
+        if not isinstance(schedule_change, ScheduleChange):
+            schedule_change = ScheduleChange.model_validate(schedule_change)
+
+        payload = ScheduleApplyRequest(
+            action=schedule_change.action,
+            duration_minutes=schedule_change.duration_minutes,
+            new_start_time=(
+                schedule_change.new_start_time.isoformat()
+                if schedule_change.new_start_time is not None
+                else None
+            ),
+            affected_task_ids=list(schedule_change.affected_task_ids),
+            reasoning=schedule_change.reasoning,
+        ).model_dump(mode="json")
+
+        reason = schedule_change.reasoning or schedule_change.action
+        try:
+            correlation_id = await self.publish_job(
+                "study.schedule.apply",
+                payload,
+                userId=envelope.userId,
+                reason=reason,
+            )
+            from services.schedule_orchestrator.result_bridge import (
+                await_schedule_cast,
+            )
+
+            return await await_schedule_cast(
+                correlation_id, reason, timeout_s=int(__import__("os").getenv(
+                    "COACH_SCHEDULE_AWAIT_TIMEOUT_S", "5"
+                ))
+            )
+        except Exception as exc:  # pragma: no cover - never lets coach fail
+            from messaging.failures import sanitized_error
+
+            return {
+                "status": "error",
+                "detail": sanitized_error(exc) or "schedule apply could not be dispatched",
+            }
 
     # ------------------------------------------------------------ internals
 
@@ -256,7 +316,9 @@ class CoachWorker(BaseAIWorker):
                 },
             )
 
-    def _coach_payload(self, action: Any, fallback_used: bool = False) -> Dict[str, Any]:
+    def _coach_payload(
+        self, action: Any, fallback_used: bool = False, schedule_update: Optional[dict] = None
+    ) -> Dict[str, Any]:
         from agents.coach.models.schemas import CoachAction
 
         if isinstance(action, CoachAction):
@@ -270,6 +332,10 @@ class CoachWorker(BaseAIWorker):
             raise TerminalError("coach produced an invalid action")
         # COACH-08 AC#4: the result carries whether the rule engine produced it.
         result["fallbackUsed"] = bool(fallback_used)
+        # COACH-16 AC#4: the result carries the schedule apply outcome so the
+        # caller knows whether the plan change was applied (success) or failed
+        # (error) — never an unexplained silence.
+        result["schedule_update"] = schedule_update
         return result
 
 

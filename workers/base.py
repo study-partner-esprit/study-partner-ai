@@ -292,6 +292,75 @@ class BaseAIWorker:
             routing_key="result",
         )
 
+        # COACH-16: resolve any in-process coordinator awaiting this result so
+        # a chained job (e.g. coach → schedule.apply) learns the real outcome
+        # and reports it in its own result instead of guessing.
+        try:
+            from services.schedule_orchestrator.result_bridge import resolve
+
+            resolve(
+                envelope.correlationId,
+                status=status,
+                detail=error,
+            )
+        except Exception:  # pragma: no cover - bridge is best-effort
+            pass
+
+    async def publish_job(
+        self,
+        job_type: str,
+        payload: Dict[str, Any],
+        *,
+        userId: str,
+        correlation_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        reason: Optional[str] = None,
+    ) -> str:
+        """Publish a downstream AI job on `ai.jobs` (COACH-16 chaining).
+
+        Returns the correlationId used by the new job. The worker's own
+        envelope carries an identity; a distinct correlation is generated so
+        the downstream result does not collide with the parent's idempotency.
+        """
+        import uuid
+
+        import aio_pika
+        from datetime import datetime, timezone
+
+        from messaging.envelope import AiJobEnvelope
+
+        correlation = correlation_id or str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+        message = {
+            "messageId": str(uuid.uuid4()),
+            "correlationId": correlation,
+            "type": job_type,
+            "version": "1",
+            "requestId": request_id or str(uuid.uuid4()),
+            "timestamp": now.isoformat().replace("+00:00", "Z"),
+            "userId": userId,
+            "payload": payload,
+        }
+        AiJobEnvelope.model_validate(message)  # never publish an invalid message
+
+        exchange = await self._channel.get_exchange(EXCHANGE_JOBS)
+        await exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(message).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                content_type="application/json",
+                message_id=message["messageId"],
+                correlation_id=correlation,
+            ),
+            routing_key=job_type,
+        )
+
+        if reason:
+            from services.schedule_orchestrator.result_bridge import register_pending
+
+            register_pending(correlation, reason)
+        return correlation
+
 
 class _RetryScheduled(Exception):
     """Internal control flow: retry copy published + original ACKed."""
