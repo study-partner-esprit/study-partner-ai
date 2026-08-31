@@ -70,6 +70,7 @@ class EvaluatorAgent:
         task_description: str,
         task_details: str,
         max_attempts: int = 5,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Start a new interactive evaluation session.
@@ -79,6 +80,8 @@ class EvaluatorAgent:
             task_description: Description of what to learn
             task_details: Detailed explanation and context
             max_attempts: Maximum number of attempts allowed
+            session_id: Optional external session id (EVAL-02 bus contract);
+                a uuid is generated when omitted (legacy/EVAL-01 behaviour)
 
         Returns:
             Dict with `session_id` and first `question`
@@ -92,7 +95,7 @@ class EvaluatorAgent:
         )
 
         # Create session
-        session_id = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         session = EvaluationSession(
             session_id=session_id,
             task_title=task_title,
@@ -533,6 +536,13 @@ class EvaluatorAgent:
     def get_session(self, session_id: str) -> Optional[EvaluationSession]:
         """Return an in-memory session by ID, or None if not present."""
         return self.sessions.get(session_id)
+
+    def restore_session(self, session: "EvaluationSession") -> None:
+        """Register a previously-persisted session (worker rehydration,
+        EVAL-02) back into the agent's in-memory registry so a multi-turn
+        answer can continue after the agent no longer holds it."""
+        self.sessions[session.session_id] = session
+        logger.info(f"Restored session {session.session_id} from state store")
 
     def delete_session(self, session_id: str) -> bool:
         """Delete a session."""
