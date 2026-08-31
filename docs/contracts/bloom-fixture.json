@@ -1,0 +1,13 @@
+{
+  "bloomLevels": ["remember", "understand", "apply", "analyze", "evaluate", "create"],
+  "knowledgeTypes": ["factual", "conceptual", "procedural", "metacognitive"],
+  "verbMap": {
+    "remember": ["Define", "List"],
+    "understand": ["Explain", "Summarize"],
+    "apply": ["Solve", "Implement"],
+    "analyze": ["Compare", "Diagnose"],
+    "evaluate": ["Justify", "Critique"],
+    "create": ["Design", "Compose"]
+  },
+  "unlockThreshold": 0.7
+}
