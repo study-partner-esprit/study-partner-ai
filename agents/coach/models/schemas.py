@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional, Literal, TYPE_CHECKING, Any
 from datetime import datetime
 
@@ -56,6 +56,35 @@ class ScheduleChange(BaseModel):
     reasoning: str = ""
 
 
+class CourseContext(BaseModel):
+    """One bounded course-catalog entry (F03 / COACH-14).
+
+    The coach loads the student's NEWEST enrolled courses (≤ 10) from the
+    course catalog, each reduced to its subject title + course title + a
+    bounded set of key concepts (≤ 15, each ≤ 100 chars). No files, URLs,
+    descriptions, ids or any other field leaves the repository — nothing
+    beyond these three strings can reach the prompt. All three are
+    user-supplied content, so prompt.py wraps them inside UNTRUSTED DATA
+    blocks (COACH-03/12) before the LLM ever sees them.
+    """
+
+    subject: str = Field(default="Unknown", max_length=60)
+    title: str = Field(default="", max_length=100)
+    key_concepts: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("key_concepts")
+    @classmethod
+    def _bounded_concepts(cls, v: List[str]) -> List[str]:
+        # Defensive reducer: never fails the job, silently trims to the bound.
+        cleaned = []
+        for c in v:
+            if isinstance(c, str) and c.strip():
+                cleaned.append(c.strip()[:100])
+        return cleaned[:15]
+
+
 class CoachInput(BaseModel):
     scheduled_tasks: List[ScheduledTask]
     current_time: datetime
@@ -67,6 +96,8 @@ class CoachInput(BaseModel):
     is_late: bool = False
     signals: Optional[Any] = None  # SignalSnapshot from ML models
     session_stats: Optional[SessionStats] = None  # COACH-13 live session stats
+    # COACH-14 bounded course catalog (newest ≥10; every field untrusted).
+    catalog_courses: Optional[List[CourseContext]] = None
 
     # Current task context — enriches prompt and history logging
     current_task_title: Optional[str] = None
