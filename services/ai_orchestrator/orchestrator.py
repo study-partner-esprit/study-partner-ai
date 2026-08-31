@@ -17,6 +17,7 @@ from agents.coach.models.schemas import (
     ScheduledTask,
     FocusState,
     FatigueState,
+    SessionStats,
 )
 from agents.coach.services.planner_repository import PlannerRepository
 from services.signal_processing_service.service import SignalProcessingService
@@ -53,6 +54,7 @@ class AIOrchestrator:
         live_focus_state: Optional[str] = None,
         live_fatigue_score: Optional[float] = None,
         live_fatigue_state: Optional[str] = None,
+        session_stats: Optional[dict] = None,
     ) -> CoachAction:
         """
         Execute the Coach agent with full user context.
@@ -63,6 +65,9 @@ class AIOrchestrator:
             ignored_count:  Number of times user has ignored recent nudges.
             do_not_disturb: Whether user has enabled DND mode.
             trace_id:       Optional request trace ID; generated if not provided.
+            session_stats:  COACH-13 bounded live session stats (progress,
+                            minutes, task switches, breaks, streak). Defensive:
+                            if malformed, defaults to None — never fails the job.
 
         Returns:
             A CoachAction containing the coach's decision.
@@ -133,6 +138,8 @@ class AIOrchestrator:
             live_focus_state=live_focus_state,
             live_fatigue_score=live_fatigue_score,
             live_fatigue_state=live_fatigue_state,
+            session_stats=session_stats,
+            trace_id=trace_id,
         )
 
         # Step 4: Execute Coach agent (history lookup + action persistence inside)
@@ -211,6 +218,8 @@ class AIOrchestrator:
         live_focus_state: Optional[str] = None,
         live_fatigue_score: Optional[float] = None,
         live_fatigue_state: Optional[str] = None,
+        session_stats: Optional[dict] = None,
+        trace_id: Optional[str] = None,
     ) -> CoachInput:
         """
         Build the CoachInput from all available data.
@@ -259,7 +268,27 @@ class AIOrchestrator:
             do_not_disturb=do_not_disturb,
             is_late=is_late,
             signals=signal_snapshot,
+            session_stats=self._resolve_session_stats(session_stats, trace_id),
         )
+
+    def _resolve_session_stats(
+        self, session_stats: Optional[dict], trace_id: str
+    ) -> Optional[SessionStats]:
+        """COACH-13: parse the bounded bus stats into SessionStats.
+
+        Missing stats → None; a malformed dict → None (logged, job continues):
+        the coach must never fail because a session stat is missing or stale.
+        """
+        if not session_stats:
+            return None
+        try:
+            return SessionStats(**session_stats)
+        except Exception as exc:
+            logger.warning(
+                "orchestrator_invalid_session_stats_default",
+                extra={"error": str(exc), "trace_id": trace_id},
+            )
+            return None
 
     def _check_if_late(
         self,
