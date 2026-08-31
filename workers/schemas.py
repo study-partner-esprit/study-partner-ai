@@ -33,6 +33,13 @@ COACH_MAX_MESSAGES = 40
 COACH_MESSAGE_MAX_CHARS = 2000
 COACH_MAX_PAYLOAD_BYTES = 16 * 1024  # 16 KB total payload cap
 
+# Session stats bounds (COACH-13) — keep in sync with payloadSchemas.js
+SESSION_STATS_MAX_PROGRESS_PCT = 100
+SESSION_STATS_MAX_MINUTES_ELAPSED = 600
+SESSION_STATS_MAX_TASK_SWITCHES = 50
+SESSION_STATS_MAX_BREAK_COUNT = 20
+SESSION_STATS_MAX_STREAK_DAYS = 365
+
 
 class PlannerRequest(BaseModel):
     """Validated payload for `study.plan.generate` jobs."""
@@ -132,6 +139,40 @@ class CoachMessage(BaseModel):
         return v
 
 
+class CoachSessionStats(BaseModel):
+    """Bounded live session statistics supplied in the nudge payload (COACH-13).
+
+    Mirrors `agents.coach.models.schemas.SessionStats` and the JS
+    `payloadSchemas.js` session_stats validator — bounds identical on all three
+    so the orchestrator rejects pre-publish exactly what the worker rejects
+    post-delivery. All fields default to 0: missing/stale stats never fail the
+    job.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    progress_pct: int = Field(default=0, ge=0, le=SESSION_STATS_MAX_PROGRESS_PCT)
+    minutes_elapsed: int = Field(default=0, ge=0, le=SESSION_STATS_MAX_MINUTES_ELAPSED)
+    task_switches: int = Field(default=0, ge=0, le=SESSION_STATS_MAX_TASK_SWITCHES)
+    break_count: int = Field(default=0, ge=0, le=SESSION_STATS_MAX_BREAK_COUNT)
+    current_streak_days: int = Field(default=0, ge=0, le=SESSION_STATS_MAX_STREAK_DAYS)
+
+    @field_validator(
+        "progress_pct",
+        "minutes_elapsed",
+        "task_switches",
+        "break_count",
+        "current_streak_days",
+        mode="before",
+    )
+    @classmethod
+    def _no_boolean_stat(cls, v):
+        # lax mode otherwise coerces True->1; reject to match the JS edge
+        if type(v) is bool:
+            raise ValueError("must be an integer, not a boolean")
+        return v
+
+
 class CoachRequest(BaseModel):
     """Validated payload for `study.coach.nudge` jobs (COACH-02).
 
@@ -145,6 +186,7 @@ class CoachRequest(BaseModel):
     session_id: Optional[str] = Field(
         default=None, max_length=COACH_SESSION_ID_MAX_CHARS
     )
+    session_stats: Optional[CoachSessionStats] = None
     signals: List[CoachSignal] = Field(default_factory=list, max_length=COACH_MAX_SIGNALS)
     messages: List[CoachMessage] = Field(default_factory=list, max_length=COACH_MAX_MESSAGES)
     focus_state: Optional[Literal["Focused", "Drifting", "Lost"]] = None
@@ -193,4 +235,7 @@ class CoachRequest(BaseModel):
             "live_focus_state": self.focus_state,
             "live_fatigue_score": self.fatigue_score,
             "live_fatigue_state": self.fatigue_state,
+            "session_stats": (
+                self.session_stats.model_dump() if self.session_stats else None
+            ),
         }
