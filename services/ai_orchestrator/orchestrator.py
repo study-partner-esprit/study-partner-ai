@@ -20,6 +20,7 @@ from agents.coach.models.schemas import (
     SessionStats,
 )
 from agents.coach.services.planner_repository import PlannerRepository
+from agents.coach.services.course_repository import CourseRepository
 from services.signal_processing_service.service import SignalProcessingService
 from services.signal_processing_service.signal_snapshot import SignalSnapshot
 from utils.logger import get_logger
@@ -42,6 +43,7 @@ class AIOrchestrator:
         """Initialize the orchestrator with required services."""
         self.signal_service = SignalProcessingService()
         self.planner_repo = PlannerRepository()
+        self.course_repo = CourseRepository()
 
     def run_coach(
         self,
@@ -55,6 +57,7 @@ class AIOrchestrator:
         live_fatigue_score: Optional[float] = None,
         live_fatigue_state: Optional[str] = None,
         session_stats: Optional[dict] = None,
+        session_id: Optional[str] = None,
     ) -> CoachAction:
         """
         Execute the Coach agent with full user context.
@@ -68,6 +71,9 @@ class AIOrchestrator:
             session_stats:  COACH-13 bounded live session stats (progress,
                             minutes, task switches, breaks, streak). Defensive:
                             if malformed, defaults to None — never fails the job.
+            session_id:     COACH-14 active StudySession id, used to map the
+                            current task to its course/subject. Absent or
+                            unreachable → task-title-only context.
 
         Returns:
             A CoachAction containing the coach's decision.
@@ -139,6 +145,7 @@ class AIOrchestrator:
             live_fatigue_score=live_fatigue_score,
             live_fatigue_state=live_fatigue_state,
             session_stats=session_stats,
+            session_id=session_id,
             trace_id=trace_id,
         )
 
@@ -219,6 +226,7 @@ class AIOrchestrator:
         live_fatigue_score: Optional[float] = None,
         live_fatigue_state: Optional[str] = None,
         session_stats: Optional[dict] = None,
+        session_id: Optional[str] = None,
         trace_id: Optional[str] = None,
     ) -> CoachInput:
         """
@@ -258,6 +266,10 @@ class AIOrchestrator:
         affective_state = "engaged"  # derive from signals in future
         is_late = self._check_if_late(scheduled_tasks, current_time)
 
+        catalog_courses, current_task = self._resolve_catalog(
+            user_id, session_id, trace_id
+        )
+
         return CoachInput(
             scheduled_tasks=scheduled_tasks,
             current_time=current_time,
@@ -269,7 +281,39 @@ class AIOrchestrator:
             is_late=is_late,
             signals=signal_snapshot,
             session_stats=self._resolve_session_stats(session_stats, trace_id),
+            catalog_courses=catalog_courses or None,
+            current_task_title=(current_task or {}).get("title"),
+            current_task_subject=(current_task or {}).get("subject"),
         )
+
+    def _resolve_catalog(
+        self, user_id: Optional[str], session_id: Optional[str], trace_id: str
+    ) -> tuple:
+        """COACH-14: bounded course catalog + current task → course/subject.
+
+        Failure-safe and channel-isolated: a catalog outage yields an empty
+        catalog while the current task (task-title-only) can still resolve —
+        a session outage the reverse. The coach job never fails either way.
+        """
+        catalog: list = []
+        current_task = None
+        if user_id:
+            try:
+                catalog = self.course_repo.fetch_catalog(user_id)
+            except Exception as exc:
+                logger.warning(
+                    "orchestrator_catalog_fetch_error",
+                    extra={"error": str(exc), "trace_id": trace_id},
+                )
+        if session_id:
+            try:
+                current_task = self.course_repo.fetch_current_task(session_id)
+            except Exception as exc:
+                logger.warning(
+                    "orchestrator_current_task_fetch_error",
+                    extra={"error": str(exc), "trace_id": trace_id},
+                )
+        return catalog, current_task
 
     def _resolve_session_stats(
         self, session_stats: Optional[dict], trace_id: str
