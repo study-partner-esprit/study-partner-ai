@@ -14,9 +14,23 @@ from pydantic import ValidationError
 import pytest
 
 from agents.evaluator.schemas import (
+    EvidenceItem,
     LLMAnalysisResponse,
     EvaluationOutput,
     build_evaluation_output,
+)
+
+_VALID_OUTPUT_KWARGS = dict(
+    session_id="s1",
+    concept_coverage=0.8,
+    logical_coherence=0.7,
+    causal_reasoning=0.6,
+    error_awareness=0.5,
+    specificity=0.4,
+    mastery_score=0.6,
+    session_status="CONTINUE",
+    guessing_detected=False,
+    evidence=[EvidenceItem(dimension="concept_coverage", quote="test")],
 )
 
 
@@ -38,30 +52,14 @@ def _analysis(**overrides) -> LLMAnalysisResponse:
 class TestEvaluationOutputSchema:
     def test_valid_output_constructs(self):
         out = EvaluationOutput(
-            session_id="s1",
-            concept_coverage=0.8,
-            logical_coherence=0.7,
-            causal_reasoning=0.6,
-            error_awareness=0.5,
-            specificity=0.9,
-            mastery_score=0.75,
+            **{**_VALID_OUTPUT_KWARGS, "mastery_score": 0.75},
             next_question="Why does this matter?",
-            session_status="CONTINUE",
         )
         assert out.mastery_score == 0.75
         assert out.next_question == "Why does this matter?"
 
     def test_all_five_dimensions_present(self):
-        out = EvaluationOutput(
-            session_id="s1",
-            concept_coverage=0.8,
-            logical_coherence=0.7,
-            causal_reasoning=0.6,
-            error_awareness=0.5,
-            specificity=0.4,
-            mastery_score=0.6,
-            session_status="CONTINUE",
-        )
+        out = EvaluationOutput(**_VALID_OUTPUT_KWARGS)
         dims = [
             out.concept_coverage,
             out.logical_coherence,
@@ -113,28 +111,12 @@ class TestEvaluationOutputSchema:
             )
 
     def test_bloom_fields_null_by_default_and_settable(self):
-        out = EvaluationOutput(
-            session_id="s1",
-            concept_coverage=0.8,
-            logical_coherence=0.7,
-            causal_reasoning=0.6,
-            error_awareness=0.5,
-            specificity=0.4,
-            mastery_score=0.6,
-            session_status="CONTINUE",
-        )
+        out = EvaluationOutput(**_VALID_OUTPUT_KWARGS)
         assert out.target_bloom_level is None
         assert out.demonstrated_bloom_level is None
 
         out2 = EvaluationOutput(
-            session_id="s1",
-            concept_coverage=0.8,
-            logical_coherence=0.7,
-            causal_reasoning=0.6,
-            error_awareness=0.5,
-            specificity=0.4,
-            mastery_score=0.6,
-            session_status="CONTINUE",
+            **_VALID_OUTPUT_KWARGS,
             target_bloom_level="ANALYZE",
             demonstrated_bloom_level="REMEMBER",
         )
@@ -159,16 +141,16 @@ class TestBuildEvaluationOutput:
         assert out.next_question == "How does this relate to cell turgor?"
         assert 0.0 <= out.specificity <= 1.0
 
-    def test_empty_answer_specificity_zero(self):
-        out = build_evaluation_output(
-            session_id="s1",
-            analysis=_analysis(),
-            mastery_score=0.5,
-            session_status="CONTINUE",
-            student_answer="",
-            key_concepts=["osmosis"],
-        )
-        assert out.specificity == 0.0
+    def test_empty_answer_rejected_no_evidence(self):
+        with pytest.raises(ValidationError):
+            build_evaluation_output(
+                session_id="s1",
+                analysis=_analysis(),
+                mastery_score=0.5,
+                session_status="CONTINUE",
+                student_answer="",
+                key_concepts=["osmosis"],
+            )
 
     def test_specific_key_answer_scores_high(self):
         out = build_evaluation_output(
