@@ -30,9 +30,10 @@ persisted to the coach history collection on job completion, idempotently by
 `correlationId` — a retried or redelivered job cannot duplicate a history row.
 The failure path never reaches persistence, so it leaves no partial records.
 
-COACH-10 moves the Node caller off the legacy HTTP route. COACH-13 will feed
-the bounded `signals` window into the coach context (today the live flattened
-fields are used).
+COACH-10 moves the Node caller off the legacy HTTP route. COACH-13 feeds the
+bounded `session_stats` block (progress, minutes, switches, breaks, streak)
+into the trusted coach context; the bounded `signals` window is still to come
+(today the live flattened fields are used).
 """
 
 from __future__ import annotations
@@ -137,9 +138,15 @@ class CoachWorker(BaseAIWorker):
             CoachInput,
             FatigueState,
             FocusState,
+            SessionStats,
         )
 
         current_time = request.current_time or datetime.now(timezone.utc)
+        session_stats = (
+            SessionStats(**request.session_stats.model_dump())
+            if request.session_stats
+            else None
+        )
         return CoachInput(
             scheduled_tasks=[],
             current_time=current_time,
@@ -156,6 +163,7 @@ class CoachWorker(BaseAIWorker):
             do_not_disturb=request.do_not_disturb,
             is_late=False,
             signals=None,
+            session_stats=session_stats,
         )
 
     async def _fallback_action(self, request, user_id: str, cause: Exception):

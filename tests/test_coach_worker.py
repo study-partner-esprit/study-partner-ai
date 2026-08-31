@@ -98,6 +98,7 @@ class FakeCoachOrchestrator:
         live_focus_state=None,
         live_fatigue_score=None,
         live_fatigue_state=None,
+        session_stats=None,
     ):
         self.calls.append(
             {
@@ -110,6 +111,7 @@ class FakeCoachOrchestrator:
                 "live_focus_state": live_focus_state,
                 "live_fatigue_score": live_fatigue_score,
                 "live_fatigue_state": live_fatigue_state,
+                "session_stats": session_stats,
             }
         )
         return self.behaviour(**self.calls[-1])
@@ -193,6 +195,7 @@ async def test_defaults_fill_missing_optional_fields():
     assert called["live_focus_state"] is None
     assert called["live_fatigue_score"] is None
     assert called["live_fatigue_state"] is None
+    assert called["session_stats"] is None
 
 
 async def test_current_time_parsed_from_iso_string():
@@ -361,6 +364,58 @@ async def test_unknown_body_fields_are_terminal():
     worker, _ = make_worker()
     with pytest.raises(TerminalError):
         await consume(worker, FakeMessage(envelope({"mystery_field": 1})))
+
+
+# ------------------------------------------------------- COACH-13 session stats
+
+def session_stats_payload():
+    return {
+        "progress_pct": 42,
+        "minutes_elapsed": 25,
+        "task_switches": 3,
+        "break_count": 2,
+        "current_streak_days": 7,
+    }
+
+
+async def test_session_stats_passed_through_to_orchestrator():
+    worker, orchestrator = make_worker()
+    await consume(
+        worker,
+        FakeMessage(envelope({"session_stats": session_stats_payload()})),
+    )
+
+    assert worker.results[0][0] == "completed"
+    assert orchestrator.calls[0]["session_stats"] == session_stats_payload()
+
+
+async def test_missing_session_stats_defaults_to_none():
+    worker, orchestrator = make_worker()
+    await consume(worker, FakeMessage(envelope({})))
+
+    assert worker.results[0][0] == "completed"
+    assert orchestrator.calls[0]["session_stats"] is None
+
+
+async def test_out_of_range_session_stat_is_terminal():
+    worker, _ = make_worker()
+    bad = {**session_stats_payload(), "minutes_elapsed": 601}
+    with pytest.raises(TerminalError):
+        await consume(worker, FakeMessage(envelope({"session_stats": bad})))
+
+
+async def test_boolean_session_stat_is_terminal():
+    worker, _ = make_worker()
+    bad = {**session_stats_payload(), "break_count": True}
+    with pytest.raises(TerminalError):
+        await consume(worker, FakeMessage(envelope({"session_stats": bad})))
+
+
+async def test_session_stats_unknown_field_is_terminal():
+    worker, _ = make_worker()
+    bad = {**session_stats_payload(), "hacked": 1}
+    with pytest.raises(TerminalError):
+        await consume(worker, FakeMessage(envelope({"session_stats": bad})))
 
 
 async def test_boolean_for_numeric_field_is_terminal():
