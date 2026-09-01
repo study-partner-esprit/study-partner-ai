@@ -39,6 +39,7 @@ EVAL_STEP_MIN = 1
 EVAL_ANSWER_MIN_CHARS = 1
 EVAL_ANSWER_MAX_CHARS = 5000
 EVAL_CONTEXT_ID_MAX_CHARS = 64
+EVAL_OBJECTIVE_ID_MAX_CHARS = 64
 
 
 class PlannerRequest(BaseModel):
@@ -212,8 +213,10 @@ class EvaluationRequest(BaseModel):
     turn; ``studentAnswer`` is the untrusted answer to process. ``userId`` is
     deliberately absent — it only ever comes from the authenticated envelope.
 
-    `objectiveId` (F14 Bloom learning-objective targeting) is deferred to a
-    separate story; it will add optional fields here when that lands.
+    `objectiveId` is accepted as OPTIONAL already (EVAL-08 carries it through to
+    the per-step result feed so the backend can persist it when present); the F14
+    Bloom learning-objective targeting logic that actually emits it is still
+    deferred to a separate story.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -226,6 +229,12 @@ class EvaluationRequest(BaseModel):
         min_length=EVAL_ANSWER_MIN_CHARS,
         max_length=EVAL_ANSWER_MAX_CHARS,
     )
+    objectiveId: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=EVAL_OBJECTIVE_ID_MAX_CHARS,
+        description="Learning-objective id (F14). Optional; persisted per step when present.",
+    )
 
     @field_validator("sessionId", "contextId", "studentAnswer")
     @classmethod
@@ -233,6 +242,13 @@ class EvaluationRequest(BaseModel):
         # len() enforces min_length, but reject whitespace-only values too
         if not v.strip():
             raise ValueError("field must not be blank")
+        return v
+
+    @field_validator("objectiveId")
+    @classmethod
+    def _objective_id_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("objectiveId must not be blank when provided")
         return v
 
     @property
