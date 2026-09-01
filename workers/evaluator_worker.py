@@ -17,7 +17,9 @@ the session store so multi-turn state survives a worker restart
 (rehydration). ``userId`` is only ever taken from the authenticated envelope.
 
 `objectiveId` / Bloom learning-objective targeting (F14) is deferred to a
-separate story and is not part of this contract yet.
+separate story; EVAL-08 only accepts an OPTIONAL `objectiveId` and carries it
+through (with the rest of the per-step record) so the Node backend can persist
+it when present.
 """
 
 from __future__ import annotations
@@ -75,6 +77,9 @@ class EvaluatorWorker(BaseAIWorker):
             await self._hydrate(request.session_id)
         # Evaluation is LLM + scoring heavy → keep it off the event loop.
         result = await asyncio.to_thread(self._run_step, request)
+        # EVAL-08: enrich the result into a self-contained per-step record (the
+        # ai.results payload the Node backend persists to Mongo). Additive only.
+        result = self._with_step_record(result, request)
         # Persist the (possibly evolved) session so it survives a restart.
         await self._persist(request.session_id)
         return result
@@ -106,6 +111,32 @@ class EvaluatorWorker(BaseAIWorker):
         if session is None:
             return
         await self.session_store.put(session_id, session.model_dump_json())
+
+    def _with_step_record(
+        self, result: Dict[str, Any], request: EvaluationRequest
+    ) -> Dict[str, Any]:
+        """EVAL-08: lift a self-contained per-step record onto the result.
+
+        The ai.results payload is the ONLY path to MongoDB — the Python backend
+        never writes to Mongo; the Node backend persists whatever arrives here.
+        This helper makes that payload a complete, queryable per-step record:
+        ``sessionId`` / ``step`` at the top level, plus ``demonstratedBloomLevel``
+        (raw feed for BLOOM-08) and ``objectiveId`` when present. Additive only,
+        so existing consumers (AiJob.completeByCorrelation) are unaffected.
+        """
+        if not isinstance(result, dict):
+            return result
+        record = dict(result)
+        record["sessionId"] = request.sessionId
+        record["step"] = request.step
+        evaluation_output = result.get("evaluation_output")
+        if isinstance(evaluation_output, dict):
+            record["demonstratedBloomLevel"] = evaluation_output.get(
+                "demonstrated_bloom_level"
+            )
+        if request.objectiveId is not None:
+            record["objectiveId"] = request.objectiveId
+        return record
 
     def _run_step(self, request: EvaluationRequest) -> Dict[str, Any]:
         if request.step > 1:
