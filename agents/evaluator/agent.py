@@ -12,7 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from agents.evaluator.llm_client import GeminiClient
+from messaging.failures import FailureClass, RetryableError, classify_failure
+from agents.evaluator.llm_client import GeminiClient, LLMRequestError
 from agents.evaluator.prompts import (
     build_question_prompt,
     build_analysis_prompt,
@@ -23,6 +24,8 @@ from agents.evaluator.prompts import (
     question_contains_concept,
     concept_coverage,
     parse_analysis_response,
+    extract_keywords_from_text,
+    clean_concepts,
 )
 from agents.evaluator.validation import (
     validate_analysis_output,
@@ -148,8 +151,14 @@ class EvaluatorAgent:
                 "message": "Evaluation session is complete",
             }
 
-        # IMPORTANT: Always append the user's answer to history first
-        # Even if analysis fails, we want to record that the user provided input
+        # Validate-then-mutate (EVAL-07): run the analysis BEFORE committing the
+        # answer to the session. A transient LLM failure (timeout/quota/5xx)
+        # raises RetryableError here, leaving the session state untouched, so the
+        # worker can retry the step without double-counting attempts/answers.
+        analysis, mastery_score = self._analyze_answer_for_session(session, user_answer)
+
+        # Commit phase — only reached on success or a non-transient (validation /
+        # local-fallback) outcome, so a retried step never double-advances state.
         session.answer_history.append(user_answer)
         session.attempts += 1
         session.state = SessionState.ANALYZING
@@ -157,9 +166,6 @@ class EvaluatorAgent:
 
         user_answer_preview = user_answer[:80] if user_answer else "(empty)"
         logger.debug(f"[{session_id}] Processing attempt {session.attempts}: '{user_answer_preview}'")
-
-        # Analyze answer via Gemini
-        analysis, mastery_score = self._analyze_answer_for_session(session, user_answer)
         session.mastery_score = mastery_score
 
         # Build result structure
@@ -275,8 +281,6 @@ class EvaluatorAgent:
             return []
 
         # Use the improved keyword extraction from prompts.py
-        from agents.evaluator.prompts import extract_keywords_from_text, clean_concepts
-
         # Extract keywords from task details
         extracted_keywords = extract_keywords_from_text(task_details)
 
@@ -381,6 +385,31 @@ class EvaluatorAgent:
         )
         return question
 
+    def _transient_guarded_generate(self, session: EvaluationSession, prompt: str) -> str:
+        """Run one analysis LLM call, translating transient failures to a
+        retryable signal (EVAL-07).
+
+        A genuinely transient failure (timeout/quota/5xx) raises
+        ``RetryableError`` so the worker retries the step. Non-transient
+        ``LLMRequestError`` (validation/parse) propagates to the caller's
+        defensive fallback so the session continues. Because the caller runs
+        this BEFORE mutating the session, a retry never double-counts.
+        """
+        try:
+            return self.llm.generate(prompt, max_tokens=150, raise_on_error=True)
+        except LLMRequestError as le:
+            if classify_failure(le) == FailureClass.RETRYABLE:
+                logger.warning(
+                    f"[{session.session_id}] Transient LLM failure ({type(le).__name__}): {le}. "
+                    f"Raising RetryableError for EVAL-07 retry."
+                )
+                raise RetryableError(str(le)) from le
+            logger.warning(
+                f"[{session.session_id}] Non-retryable LLM error ({type(le).__name__}): {le}. "
+                f"Using robust fallback scoring to continue session."
+            )
+            raise  # non-retryable: let the caller's generic fallback run
+
     def _analyze_answer_for_session(
         self, session: EvaluationSession, student_answer: str
     ) -> tuple[LLMAnalysisResponse, float]:
@@ -462,7 +491,8 @@ class EvaluatorAgent:
         
         try:
             # Generate plain text analysis from Gemini (reduced tokens to minimize API usage)
-            feedback_text = self.llm.generate(prompt, max_tokens=150)
+            # so transient LLM failures surface as RetryableError (EVAL-07).
+            feedback_text = self._transient_guarded_generate(session, prompt)
 
             # Parse structured response from feedback text
             parsed_response = parse_analysis_response(feedback_text)
@@ -477,7 +507,7 @@ class EvaluatorAgent:
                     f"Full LLM response: {feedback_text!r}"
                 )
                 # One correction retry
-                feedback_text = self.llm.generate(prompt, max_tokens=150)
+                feedback_text = self._transient_guarded_generate(session, prompt)
                 parsed_response = parse_analysis_response(feedback_text)
                 is_valid, reason = validate_analysis_output(
                     parsed_response, student_answer, session.context.key_concepts
@@ -548,6 +578,10 @@ class EvaluatorAgent:
                 f"Missing: {final_missing_concepts}"
             )
             return analysis, mastery_score
+        except RetryableError:
+            # EVAL-07: a transient failure must propagate to the worker for
+            # retry — never swallow it into the local fallback.
+            raise
         except Exception as e:
             logger.warning(
                 f"[{session.session_id}] Analysis pipeline error ({type(e).__name__}): {e}. "

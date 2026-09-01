@@ -40,8 +40,16 @@ class GeminiClient:
         logger.info("✓ Evaluator LLM client initialized (model: %s)", self.model)
 
     @staticmethod
-    def _generate_text(prompt: str, max_tokens: int, temperature: float) -> str:
-        """Single round-trip through the shared `evaluator` model group."""
+    def _generate_text(
+        prompt: str, max_tokens: int, temperature: float, raise_on_error: bool = False
+    ) -> str:
+        """Single round-trip through the shared `evaluator` model group.
+
+        ``raise_on_error=True`` propagates a transient ``LLMRequestError`` so the
+        caller (answer analysis) can surface it as a retryable failure (EVAL-07).
+        When ``False`` (default, used by question generation) a transient failure
+        degrades to a placeholder string and the caller falls back to templates.
+        """
         try:
             return ask(
                 "evaluator",
@@ -50,13 +58,25 @@ class GeminiClient:
                 max_tokens=max_tokens,
                 temperature=temperature,
             ).strip()
-        except (LLMRequestError, MissingMockResponderError) as e:
+        except LLMRequestError as e:
+            if raise_on_error:
+                raise
+            logger.warning("Evaluator LLM unavailable: %s", e)
+            return "⏱️ LLM unavailable. Please wait and try again."
+        except MissingMockResponderError as e:
             logger.warning("Evaluator LLM unavailable: %s", e)
             return "⏱️ LLM unavailable. Please wait and try again."
 
-    def generate(self, prompt: str, max_tokens: int = 200, temperature: float = 0.3) -> str:
-        """Generate text using the shared `evaluator` model group."""
-        return self._generate_text(prompt, max_tokens, temperature)
+    def generate(
+        self, prompt: str, max_tokens: int = 200, temperature: float = 0.3,
+        raise_on_error: bool = False,
+    ) -> str:
+        """Generate text using the shared `evaluator` model group.
+
+        Set ``raise_on_error=True`` to propagate transient LLM failures instead of
+        degrading to a placeholder (see ``_generate_text``).
+        """
+        return self._generate_text(prompt, max_tokens, temperature, raise_on_error)
 
     def chat(self, messages: list[dict], max_tokens: int = 150, temperature: float = 0.3) -> str:
         """Chat interface for multi-turn conversations."""
