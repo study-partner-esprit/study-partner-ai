@@ -1,0 +1,176 @@
+{
+  "gateThreshold": 0.6,
+  "verbDisagreementPenalty": 0.5,
+  "maxCorrectionRetries": 1,
+  "note": "Regression fixture (BLOOM-05): exactly one example per (bloomLevel x knowledgeType) cell. Each verb belongs to VERB_MAP[bloomLevel], so a consistent classification is verbConsistent=true. confidence drives the needsReview gate (confidence < gateThreshold).",
+  "cells": [
+    {
+      "text": "Define the term hypothesis as used in the scientific method.",
+      "verb": "Define",
+      "bloomLevel": "remember",
+      "knowledgeType": "factual",
+      "confidence": 0.9
+    },
+    {
+      "text": "List the central components of a force vector.",
+      "verb": "List",
+      "bloomLevel": "remember",
+      "knowledgeType": "conceptual",
+      "confidence": 0.85
+    },
+    {
+      "text": "List the steps required to calibrate the laboratory equipment.",
+      "verb": "List",
+      "bloomLevel": "remember",
+      "knowledgeType": "procedural",
+      "confidence": 0.82
+    },
+    {
+      "text": "Define what it means to monitor your own understanding while reading.",
+      "verb": "Define",
+      "bloomLevel": "remember",
+      "knowledgeType": "metacognitive",
+      "confidence": 0.63
+    },
+    {
+      "text": "Explain the meaning of the SI base unit of mass.",
+      "verb": "Explain",
+      "bloomLevel": "understand",
+      "knowledgeType": "factual",
+      "confidence": 0.88
+    },
+    {
+      "text": "Summarize the theory of evolution by natural selection.",
+      "verb": "Summarize",
+      "bloomLevel": "understand",
+      "knowledgeType": "conceptual",
+      "confidence": 0.87
+    },
+    {
+      "text": "Explain the procedure for computing a moving average.",
+      "verb": "Explain",
+      "bloomLevel": "understand",
+      "knowledgeType": "procedural",
+      "confidence": 0.8
+    },
+    {
+      "text": "Summarize the strategies you use to check your own work.",
+      "verb": "Summarize",
+      "bloomLevel": "understand",
+      "knowledgeType": "metacognitive",
+      "confidence": 0.58
+    },
+    {
+      "text": "Solve for x in the equation 3x + 5 = 14.",
+      "verb": "Solve",
+      "bloomLevel": "apply",
+      "knowledgeType": "factual",
+      "confidence": 0.92
+    },
+    {
+      "text": "Implement a function that models supply and demand.",
+      "verb": "Implement",
+      "bloomLevel": "apply",
+      "knowledgeType": "conceptual",
+      "confidence": 0.86
+    },
+    {
+      "text": "Solve the linear system using Gaussian elimination.",
+      "verb": "Solve",
+      "bloomLevel": "apply",
+      "knowledgeType": "procedural",
+      "confidence": 0.9
+    },
+    {
+      "text": "Implement a self-check routine you would use before submitting work.",
+      "verb": "Implement",
+      "bloomLevel": "apply",
+      "knowledgeType": "metacognitive",
+      "confidence": 0.55
+    },
+    {
+      "text": "Compare the boiling points of water and ethanol.",
+      "verb": "Compare",
+      "bloomLevel": "analyze",
+      "knowledgeType": "factual",
+      "confidence": 0.83
+    },
+    {
+      "text": "Diagnose whether the experiment controls for confounding variables.",
+      "verb": "Diagnose",
+      "bloomLevel": "analyze",
+      "knowledgeType": "conceptual",
+      "confidence": 0.84
+    },
+    {
+      "text": "Compare two sorting algorithms by their step counts.",
+      "verb": "Compare",
+      "bloomLevel": "analyze",
+      "knowledgeType": "procedural",
+      "confidence": 0.78
+    },
+    {
+      "text": "Diagnose which part of your reasoning was flawed in the proof.",
+      "verb": "Diagnose",
+      "bloomLevel": "analyze",
+      "knowledgeType": "metacognitive",
+      "confidence": 0.6
+    },
+    {
+      "text": "Justify the choice of 256-bit AES over DES using key size.",
+      "verb": "Justify",
+      "bloomLevel": "evaluate",
+      "knowledgeType": "factual",
+      "confidence": 0.81
+    },
+    {
+      "text": "Critique the assumption that consumer demand is perfectly linear.",
+      "verb": "Critique",
+      "bloomLevel": "evaluate",
+      "knowledgeType": "conceptual",
+      "confidence": 0.85
+    },
+    {
+      "text": "Justify the ordering of steps in the deployment checklist.",
+      "verb": "Justify",
+      "bloomLevel": "evaluate",
+      "knowledgeType": "procedural",
+      "confidence": 0.76
+    },
+    {
+      "text": "Critique the mental model you used to solve the problem.",
+      "verb": "Critique",
+      "bloomLevel": "evaluate",
+      "knowledgeType": "metacognitive",
+      "confidence": 0.57
+    },
+    {
+      "text": "Design a mnemonic device to remember the periodic table groups.",
+      "verb": "Design",
+      "bloomLevel": "create",
+      "knowledgeType": "factual",
+      "confidence": 0.79
+    },
+    {
+      "text": "Compose a model that unifies the concepts of work and energy.",
+      "verb": "Compose",
+      "bloomLevel": "create",
+      "knowledgeType": "conceptual",
+      "confidence": 0.88
+    },
+    {
+      "text": "Design a procedure for onboarding new developers to the codebase.",
+      "verb": "Design",
+      "bloomLevel": "create",
+      "knowledgeType": "procedural",
+      "confidence": 0.86
+    },
+    {
+      "text": "Compose a self-assessment rubric to use before exams.",
+      "verb": "Compose",
+      "bloomLevel": "create",
+      "knowledgeType": "metacognitive",
+      "confidence": 0.62
+    }
+  ]
+}
