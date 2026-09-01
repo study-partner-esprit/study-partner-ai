@@ -14,6 +14,7 @@ from agents.course_ingestion.enrichment.deduplicator import deduplicate_chunks
 from agents.course_ingestion.enrichment.objective_extractor import (
     extract_objectives_for_document,
 )
+from bloom.classifier import classify_objectives_for_document
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -83,6 +84,20 @@ def ingest_course(course_title: str, pdf_files: list):
         )
     for warning in objective_stats["warnings"]:
         logger.warning("ingest_objectives_warning", extra={"warning": warning})
+
+    # Step 4c: classify draft objectives into level x type with confidence (BLOOM-05)
+    classification_stats = classify_objectives_for_document(enriched_subtopics)
+    if classification_stats["classified"] or classification_stats["failed"]:
+        logger.info(
+            "ingest_objectives_classified",
+            extra={
+                "classified": classification_stats["classified"],
+                "needs_review": classification_stats["needs_review"],
+                "failed": classification_stats["failed"],
+            },
+        )
+    for warning in classification_stats["warnings"]:
+        logger.warning("ingest_classification_warning", extra={"warning": warning})
 
     # Step 5: tokenize subtopics content
     subtopics = tokenize_subtopics(enriched_subtopics, chunk_size=200, overlap=50)
