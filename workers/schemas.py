@@ -33,6 +33,11 @@ COACH_MAX_MESSAGES = 40
 COACH_MESSAGE_MAX_CHARS = 2000
 COACH_MAX_PAYLOAD_BYTES = 16 * 1024  # 16 KB total payload cap
 
+# Knowledge extraction input limits (BLOOM-03) — keep in sync with payloadSchemas.js
+COURSE_ID_MAX_CHARS = 64
+DOCUMENT_ID_MAX_CHARS = 64
+CONTENT_REF_MAX_CHARS = 256
+
 
 class PlannerRequest(BaseModel):
     """Validated payload for `study.plan.generate` jobs."""
@@ -194,3 +199,26 @@ class CoachRequest(BaseModel):
             "live_fatigue_score": self.fatigue_score,
             "live_fatigue_state": self.fatigue_state,
         }
+
+
+class KnowledgeExtractRequest(BaseModel):
+    """Validated payload for `study.knowledge.extract` jobs (BLOOM-03).
+
+    Input contract `{documentId, courseId, contentRef}` — raw content is loaded
+    from storage by the worker, never inline in the envelope, so only reference
+    fields are required. Limits mirror `payloadSchemas.js` so the orchestrator
+    rejects pre-publish exactly what the worker rejects post-delivery.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    documentId: str = Field(..., min_length=1, max_length=DOCUMENT_ID_MAX_CHARS)
+    courseId: str = Field(..., min_length=1, max_length=COURSE_ID_MAX_CHARS)
+    contentRef: str = Field(..., min_length=1, max_length=CONTENT_REF_MAX_CHARS)
+
+    @field_validator("documentId", "courseId", "contentRef")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("must be a non-empty string")
+        return v
