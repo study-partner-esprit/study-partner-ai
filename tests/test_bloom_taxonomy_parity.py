@@ -18,7 +18,9 @@ from bloom.taxonomy import (
     KNOWLEDGE_TYPES,
     UNLOCK_THRESHOLD,
     VERB_MAP,
+    is_level_unlocked,
     next_level,
+    unlocked_levels,
 )
 
 FIXTURE_PATH = (
@@ -59,3 +61,24 @@ def test_next_level_progression():
         assert next_level(levels[i]) == levels[i + 1]
     assert next_level(levels[-1]) is None
     assert next_level("not-a-level") is None
+
+
+def test_is_level_unlocked_gate():
+    # remember is always unlocked
+    assert is_level_unlocked({}, "remember")
+    # level N unlocked only when N-1 >= threshold
+    assert is_level_unlocked({"remember": 0.9, "understand": 0.8}, "apply")
+    assert not is_level_unlocked({"remember": 0.9, "understand": 0.6}, "apply")
+    assert is_level_unlocked({"remember": 0.9}, "understand")
+    # missing predecessor score -> not unlocked
+    assert not is_level_unlocked({"understand": 0.9}, "create")
+    assert not is_level_unlocked({}, "create")
+
+
+def test_unlocked_levels_respects_threshold():
+    scores = {"remember": 0.9, "understand": 0.8, "apply": 0.4}
+    assert unlocked_levels(scores) == ("remember", "understand", "apply")
+
+
+def test_unlocked_levels_empty_when_nothing_above_remember():
+    assert unlocked_levels({}) == ("remember",)

@@ -128,6 +128,7 @@ class PlannerAgent:
             retrieved_concepts,
             request.available_minutes,
             request.course_knowledge,
+            weak_competencies=request.weak_competencies if request else [],
         )
 
         # Step 6: Apply rules engine
@@ -319,6 +320,7 @@ class PlannerAgent:
         concepts: list,
         available_minutes: int,
         course_knowledge: dict = None,
+        weak_competencies=None,
     ) -> list:
         """
         Decompose the learning goal into atomic tasks.
@@ -336,7 +338,12 @@ class PlannerAgent:
 
         # Try LLM decomposer first for specific goals
         logger.debug("planner_llm_decompose", extra={"goal": goal})
-        llm_tasks = self.llm_decomposer.decompose(goal, concepts, available_minutes)
+        llm_tasks = self.llm_decomposer.decompose(
+            goal,
+            concepts,
+            available_minutes,
+            weak_competencies=weak_competencies or [],
+        )
         if llm_tasks and len(llm_tasks) > 1:
             logger.debug(
                 "planner_llm_decompose_ok", extra={"num_tasks": len(llm_tasks)}
@@ -345,7 +352,9 @@ class PlannerAgent:
 
         # Fallback to simple decomposer
         logger.info("planner_simple_decompose_fallback")
-        return self.simple_decomposer.decompose(goal, concepts, available_minutes)
+        return self.simple_decomposer.decompose(
+            goal, concepts, available_minutes, weak_competencies=weak_competencies or []
+        )
 
     def _apply_rules(
         self, tasks: list, available_minutes: int, pacing_factor: float

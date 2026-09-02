@@ -28,6 +28,15 @@ class AtomicTask(BaseModel):
         default_factory=list, description="List of prerequisite task IDs"
     )
     is_review: bool = Field(default=False, description="Whether this is a review task")
+    # BLOOM-10: optional competency mapping. When present, the task targets a
+    # specific learning objective at a chosen cognitive level. Absent for
+    # fallback/degraded plans (graceful degradation).
+    objective_id: Optional[str] = Field(
+        default=None, description="Learning objective this task targets"
+    )
+    target_bloom_level: Optional[str] = Field(
+        default=None, description="Bloom level this task targets (lowercase, BLOOM-01 enum)"
+    )
 
     class Config:
         json_schema_extra = {
@@ -39,6 +48,37 @@ class AtomicTask(BaseModel):
                 "difficulty": 0.3,
                 "prerequisites": [],
                 "is_review": False,
+                "objective_id": None,
+                "target_bloom_level": None,
+            }
+        }
+
+
+class WeakCompetency(BaseModel):
+    """
+    A single weak competency used for weakest-first targeting (BLOOM-10).
+
+    `current_level` is the highest unlocked level when the plan was built;
+    `scores` maps each bloom level to its 0..1 competency score so the
+    planner can enforce the progression gate (level N only when N-1 >= 0.7).
+    """
+
+    topic_id: str
+    topic_title: Optional[str] = Field(default=None)
+    knowledge_type: Optional[str] = Field(default=None)
+    scores: dict = Field(default_factory=dict)
+    current_level: Optional[str] = Field(default=None)
+    unlocked_levels: tuple = Field(default_factory=tuple)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "topic_id": "sorting",
+                "topic_title": "Sorting Algorithms",
+                "knowledge_type": "conceptual",
+                "scores": {"remember": 0.9, "understand": 0.8, "apply": 0.4},
+                "current_level": "apply",
+                "unlocked_levels": ("remember", "understand"),
             }
         }
 
@@ -70,6 +110,11 @@ class PlannerInput(BaseModel):
     )
     tokenization_settings: Optional[Dict[str, Any]] = Field(
         default=None, description="Settings for tokenization"
+    )
+    # BLOOM-10: weakest-first targeting input (ordered weakest -> strongest).
+    weak_competencies: List[WeakCompetency] = Field(
+        default_factory=list,
+        description="Top-K weakest competencies + unlocked levels for targeting",
     )
 
     @field_validator("goal", "course_knowledge")

@@ -22,15 +22,22 @@ class LLMDecomposerReal:
         self.endpoint = endpoint
 
     def decompose(
-        self, goal: str, concepts: List[str], available_minutes: int
+        self,
+        goal: str,
+        concepts: List[str],
+        available_minutes: int,
+        weak_competencies=None,
     ) -> List[AtomicTask]:
         """
         Calls the LLM to generate atomic tasks.
         :param goal: user learning goal
         :param concepts: retrieved concepts from RAG
+        :param weak_competencies: BLOOM-10 weakest-first input (WeakCompetency list)
         :return: list of AtomicTask
         """
-        system, user_prompt = self._build_prompt(goal, concepts, available_minutes)
+        system, user_prompt = self._build_prompt(
+            goal, concepts, available_minutes, weak_competencies or []
+        )
         tasks = self._completion(system, user_prompt)
 
         # PLAN-05: one correction retry when the first response is unusable
@@ -44,10 +51,37 @@ class LLMDecomposerReal:
 
         if tasks is None:
             raise ValueError("LLM returned unusable output after one correction retry")
+
+        # BLOOM-10: attach objective targets to tasks when weak competencies exist
+        self._attach_weakest_targets(tasks, weak_competencies or [])
         return tasks
 
-    def _build_prompt(self, goal: str, concepts: List[str], available_minutes: int):
+    def _build_prompt(
+        self, goal: str, concepts: List[str], available_minutes: int, weak_competencies=None
+    ):
         """System instructions isolated; all user content wrapped as untrusted."""
+        targeting_block = ""
+        if weak_competencies:
+            lines = []
+            for wc in weak_competencies:
+                title = wc.topic_title or wc.topic_id
+                unlocked = ", ".join(wc.unlocked_levels) if wc.unlocked_levels else "(none)"
+                lines.append(
+                    f"- Topic '{title}': unlocked levels = [{unlocked}]; "
+                    f"weakest = {wc.current_level or 'not started'}"
+                )
+            target_context = "\n".join(lines)
+            targeting_block = (
+                "The user has weak competencies to strengthen first (weakest-first "
+                "targeting). Prioritise tasks on these topics, and for each tasks "
+                "must respect the progression gate: only assign a task at Bloom "
+                "level N if level N-1 is already unlocked (score >= 0.7). Prefer "
+                "tasks at the NEXT unlocked level above the user's current level "
+                "for each weak topic.\n"
+                + wrap_untrusted(target_context, label="WEAK_COMPETENCIES")
+                + "\n\n"
+            )
+
         system_instructions = (
             "You are a study planner assistant. Break the user's learning goal "
             "into atomic study tasks. Each task must be <= 45 minutes, include "
@@ -67,9 +101,40 @@ class LLMDecomposerReal:
 
         user_content = (
             f"Relevant course concepts:\n{context_block}\n\n"
-            f"Learning goal:\n{goal_block}"
+            f"Learning goal:\n{goal_block}\n\n"
+            f"{targeting_block}"
         )
         return system_instructions, user_content
+
+    def _attach_weakest_targets(self, tasks, weak_competencies):
+        """BLOOM-10: deterministically tag tasks whose title/description matches a
+        weak topic at its next unlocked level. Best-effort; never blocks planning."""
+        if not weak_competencies:
+            return
+        from bloom.taxonomy import BLOOM_LEVELS, UNLOCK_THRESHOLD
+
+        def pick_target(wc):
+            # Highest unlocked level that still needs work (score < threshold).
+            # This pushes the profile up while respecting the progression gate
+            # (that level is assignable because its predecessor is unlocked).
+            target = None
+            for lvl in BLOOM_LEVELS:
+                if lvl not in (wc.unlocked_levels or ()):
+                    continue
+                if (wc.scores or {}).get(lvl, 0) < UNLOCK_THRESHOLD:
+                    target = lvl
+            return target
+
+        for task in tasks:
+            task_text = f"{task.title} {task.description}".lower()
+            for wc in weak_competencies:
+                keyword = (wc.topic_title or wc.topic_id).lower()
+                if keyword and keyword in task_text:
+                    target = pick_target(wc)
+                    if target:
+                        task.objective_id = wc.topic_id
+                        task.target_bloom_level = target
+                    break
 
     def _completion(self, system: str, user_prompt: str) -> List[AtomicTask] | None:
         """One LLM round-trip; returns None when the output cannot be parsed."""

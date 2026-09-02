@@ -14,7 +14,11 @@ class SimpleGoalDecomposer:
     """
 
     def decompose(
-        self, goal: str, concepts: List[str] = None, available_minutes: int = 90
+        self,
+        goal: str,
+        concepts: List[str] = None,
+        available_minutes: int = 90,
+        weak_competencies=None,
     ) -> List[AtomicTask]:
         """
         Decompose goal into multiple atomic tasks.
@@ -22,6 +26,9 @@ class SimpleGoalDecomposer:
         Args:
             goal: Learning goal string
             concepts: Retrieved relevant concepts (required from JSON)
+            weak_competencies: BLOOM-10 input, intentionally NOT used here —
+                the fallback emits tasks WITHOUT objective/target fields
+                (graceful degradation per BLOOM-10 AC).
 
         Returns:
             List of AtomicTask objects
