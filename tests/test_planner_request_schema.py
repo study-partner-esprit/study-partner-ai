@@ -1,4 +1,4 @@
-"""PlannerRequest schema tests (F02 / PLAN-02)."""
+"""PlannerRequest schema tests (F02 / PLAN-02, BLOOM-10)."""
 
 from datetime import datetime, timezone
 
@@ -10,7 +10,9 @@ from workers.schemas import (
     CONCEPTS_MAX_ITEMS,
     CONCEPT_MAX_CHARS,
     GOAL_MAX_CHARS,
+    LEVEL_MAX_CHARS,
     PlannerRequest,
+    WEAK_COMPETENCIES_MAX_ITEMS,
 )
 
 
@@ -72,3 +74,72 @@ def test_to_planner_input_maps_identity_and_defaults():
     assert pi.user_id == "u-9"
     assert pi.available_minutes == 45
     assert pi.goal == "graphs"
+    assert pi.weak_competencies == []
+
+
+def _wc(**kw):
+    base = {
+        "topic_id": "sorting",
+        "topic_title": "Sorting Algorithms",
+        "knowledge_type": "conceptual",
+        "scores": {"remember": 0.9, "understand": 0.8, "apply": 0.4},
+        "current_level": "apply",
+        "unlocked_levels": ["remember", "understand", "apply"],
+    }
+    base.update(kw)
+    return base
+
+
+def test_weak_competencies_default_empty():
+    r = PlannerRequest(goal="g")
+    assert r.weak_competencies == []
+
+
+def test_weak_competencies_bounded_by_count():
+    ok = PlannerRequest(
+        goal="g",
+        weak_competencies=[_wc(topic_id=f"t{i}") for i in range(WEAK_COMPETENCIES_MAX_ITEMS)],
+    )
+    assert len(ok.weak_competencies) == WEAK_COMPETENCIES_MAX_ITEMS
+    with pytest.raises(ValidationError):
+        PlannerRequest(
+            goal="g",
+            weak_competencies=[
+                _wc(topic_id=f"t{i}") for i in range(WEAK_COMPETENCIES_MAX_ITEMS + 1)
+            ],
+        )
+
+
+def test_weak_competencies_length_bounds():
+    with pytest.raises(ValidationError):
+        PlannerRequest(goal="g", weak_competencies=[_wc(topic_id="x" * (LEVEL_MAX_CHARS + 1))])
+
+
+def test_weak_competencies_scores_must_be_in_range():
+    with pytest.raises(ValidationError):
+        PlannerRequest(goal="g", weak_competencies=[_wc(scores={"remember": 1.5})])
+    with pytest.raises(ValidationError):
+        PlannerRequest(goal="g", weak_competencies=[_wc(scores={"remember": -0.1})])
+    PlannerRequest(goal="g", weak_competencies=[_wc(scores={"remember": 0.0, "apply": 1.0})])
+
+
+def test_weak_competencies_forbidden_extra_fields():
+    with pytest.raises(ValidationError):
+        PlannerRequest(goal="g", weak_competencies=[_wc(injected="tag")])
+
+
+def test_to_planner_input_maps_weak_competencies():
+    from agents.planner.models.task_graph import WeakCompetency
+
+    r = PlannerRequest(goal="g", weak_competencies=[_wc()])
+    pi = r.to_planner_input(user_id="u-9")
+    assert len(pi.weak_competencies) == 1
+    wc = pi.weak_competencies[0]
+    assert isinstance(wc, WeakCompetency)
+    assert wc.topic_id == "sorting"
+    assert wc.topic_title == "Sorting Algorithms"
+    assert wc.knowledge_type == "conceptual"
+    assert wc.current_level == "apply"
+    # unlocked_levels is coerced to a tuple for the model
+    assert tuple(wc.unlocked_levels) == ("remember", "understand", "apply")
+    assert wc.scores["apply"] == 0.4

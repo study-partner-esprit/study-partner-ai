@@ -26,6 +26,10 @@ CONCEPT_MAX_CHARS = 100
 AVAILABLE_MINUTES_MIN = 1
 AVAILABLE_MINUTES_MAX = 7 * 24 * 60  # one week
 
+# BLOOM-10 weak-competency limits
+WEAK_COMPETENCIES_MAX_ITEMS = 10
+LEVEL_MAX_CHARS = 128
+
 # Coach input limits (COACH-02) — keep in sync with payloadSchemas.js
 COACH_SESSION_ID_MAX_CHARS = 64
 COACH_MAX_SIGNALS = 20
@@ -47,6 +51,23 @@ DOCUMENT_ID_MAX_CHARS = 64
 CONTENT_REF_MAX_CHARS = 256
 
 
+class WeakCompetencyRequest(BaseModel):
+    """One weak competency entry (BLOOM-10), from the Node competency profile.
+
+    `scores` maps each lowercase bloom level -> 0..1 score. `unlocked_levels`
+    lists the levels the progression gate (N-1 >= 0.7) currently permits.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic_id: str = Field(..., max_length=LEVEL_MAX_CHARS)
+    topic_title: Optional[str] = Field(default=None, max_length=LEVEL_MAX_CHARS)
+    knowledge_type: Optional[str] = Field(default=None, max_length=32)
+    scores: dict = Field(default_factory=dict)
+    current_level: Optional[str] = Field(default=None, max_length=16)
+    unlocked_levels: List[str] = Field(default_factory=list, max_length=6)
+
+
 class PlannerRequest(BaseModel):
     """Validated payload for `study.plan.generate` jobs."""
 
@@ -61,6 +82,8 @@ class PlannerRequest(BaseModel):
         ge=AVAILABLE_MINUTES_MIN,
         le=AVAILABLE_MINUTES_MAX,
     )
+    # BLOOM-10: top-K weakest competencies (weakest first) for targeting.
+    weak_competencies: List[WeakCompetencyRequest] = Field(default_factory=list)
 
     @field_validator("goal")
     @classmethod
@@ -79,11 +102,22 @@ class PlannerRequest(BaseModel):
                 raise ValueError(f"concept exceeds {CONCEPT_MAX_CHARS} chars")
         return v
 
+    @field_validator("weak_competencies")
+    @classmethod
+    def _weak_competencies_bounded(cls, v: List[WeakCompetencyRequest]) -> List[WeakCompetencyRequest]:
+        if len(v) > WEAK_COMPETENCIES_MAX_ITEMS:
+            raise ValueError(f"weak_competencies exceeds {WEAK_COMPETENCIES_MAX_ITEMS} items")
+        for wc in v:
+            for level, score in wc.scores.items():
+                if not isinstance(score, (int, float)) or not (0 <= score <= 1):
+                    raise ValueError(f"score for '{level}' must be in [0,1]")
+        return v
+
     def to_planner_input(self, user_id: str):
         """Map onto the legacy PlannerInput consumed by PlannerAgent."""
         from datetime import datetime, timedelta, timezone
 
-        from agents.planner.models.task_graph import PlannerInput
+        from agents.planner.models.task_graph import PlannerInput, WeakCompetency
 
         DEFAULT_DEADLINE_DAYS = 7
         deadline = self.deadline or datetime.now(timezone.utc) + timedelta(
@@ -95,6 +129,17 @@ class PlannerRequest(BaseModel):
             available_minutes=self.available_minutes,
             user_id=user_id,
             retrieved_concepts=self.concepts or None,
+            weak_competencies=[
+                WeakCompetency(
+                    topic_id=wc.topic_id,
+                    topic_title=wc.topic_title,
+                    knowledge_type=wc.knowledge_type,
+                    scores=wc.scores,
+                    current_level=wc.current_level,
+                    unlocked_levels=tuple(wc.unlocked_levels),
+                )
+                for wc in self.weak_competencies
+            ],
         )
 
 

@@ -46,3 +46,25 @@ def next_level(level: str) -> Optional[str]:
     if idx == len(BLOOM_LEVELS) - 1:
         return None
     return BLOOM_LEVELS[idx + 1]
+
+
+def is_level_unlocked(scores, level: str, unlock_threshold: float = UNLOCK_THRESHOLD) -> bool:
+    """Progression gate (BLOOM-10): level N is unlocked only when level N-1
+    is >= `unlock_threshold` (0.7).
+
+    `scores` maps a bloom level -> 0..1 score. 'remember' is always unlocked.
+    A missing predecessor score is treated as 0 (not unlocked).
+    """
+    if level not in BLOOM_LEVELS:
+        return False
+    idx = BLOOM_LEVELS.index(level)
+    if idx == 0:
+        return True
+    prev_level = BLOOM_LEVELS[idx - 1]
+    prev_score = scores.get(prev_level)
+    return prev_score is not None and prev_score >= unlock_threshold
+
+
+def unlocked_levels(scores, unlock_threshold: float = UNLOCK_THRESHOLD) -> tuple:
+    """Return every level currently unlocked for a given competency score map."""
+    return tuple(lvl for lvl in BLOOM_LEVELS if is_level_unlocked(scores, lvl, unlock_threshold))
