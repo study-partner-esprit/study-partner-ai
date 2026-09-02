@@ -64,7 +64,7 @@ exclude = ["__pycache__", ".venv", ".git", "build", "dist"]
 
 [tool.pytest.ini_options]
 pythonpath = "."
-testpaths = ["agents", "services"]
+testpaths = ["agents", "services", "tests"]
 addopts = "-v"
 asyncio_mode = "auto"
 markers = [
