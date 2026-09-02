@@ -33,6 +33,14 @@ COACH_MAX_MESSAGES = 40
 COACH_MESSAGE_MAX_CHARS = 2000
 COACH_MAX_PAYLOAD_BYTES = 16 * 1024  # 16 KB total payload cap
 
+# Evaluator limits (EVAL-02) — keep in sync with payloadSchemas.js (backend)
+EVAL_SESSION_ID_MAX_CHARS = 64
+EVAL_STEP_MIN = 1
+EVAL_ANSWER_MIN_CHARS = 1
+EVAL_ANSWER_MAX_CHARS = 5000
+EVAL_CONTEXT_ID_MAX_CHARS = 64
+EVAL_OBJECTIVE_ID_MAX_CHARS = 64
+
 # Knowledge extraction input limits (BLOOM-03) — keep in sync with payloadSchemas.js
 COURSE_ID_MAX_CHARS = 64
 DOCUMENT_ID_MAX_CHARS = 64
@@ -199,6 +207,66 @@ class CoachRequest(BaseModel):
             "live_fatigue_score": self.fatigue_score,
             "live_fatigue_state": self.fatigue_state,
         }
+
+
+class EvaluationRequest(BaseModel):
+    """Validated payload for `study.eval.step` jobs (F04 / EVAL-02).
+
+    Wire fields are camelCase to match the Node edge validator + publisher
+    (``shared/ai-messaging/payloadSchemas.js`` / ``jobs.js``). ``step`` starts
+    at 1 (creates the session from ``contextId``) and increments each answer
+    turn; ``studentAnswer`` is the untrusted answer to process. ``userId`` is
+    deliberately absent — it only ever comes from the authenticated envelope.
+
+    `objectiveId` is accepted as OPTIONAL already (EVAL-08 carries it through to
+    the per-step result feed so the backend can persist it when present); the F14
+    Bloom learning-objective targeting logic that actually emits it is still
+    deferred to a separate story.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sessionId: str = Field(..., min_length=1, max_length=EVAL_SESSION_ID_MAX_CHARS)
+    step: int = Field(..., ge=EVAL_STEP_MIN, strict=True)
+    contextId: str = Field(..., min_length=1, max_length=EVAL_CONTEXT_ID_MAX_CHARS)
+    studentAnswer: str = Field(
+        ...,
+        min_length=EVAL_ANSWER_MIN_CHARS,
+        max_length=EVAL_ANSWER_MAX_CHARS,
+    )
+    objectiveId: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=EVAL_OBJECTIVE_ID_MAX_CHARS,
+        description="Learning-objective id (F14). Optional; persisted per step when present.",
+    )
+
+    @field_validator("sessionId", "contextId", "studentAnswer")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        # len() enforces min_length, but reject whitespace-only values too
+        if not v.strip():
+            raise ValueError("field must not be blank")
+        return v
+
+    @field_validator("objectiveId")
+    @classmethod
+    def _objective_id_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("objectiveId must not be blank when provided")
+        return v
+
+    @property
+    def session_id(self) -> str:
+        return self.sessionId
+
+    @property
+    def context_id(self) -> str:
+        return self.contextId
+
+    @property
+    def student_answer(self) -> str:
+        return self.studentAnswer
 
 
 class KnowledgeExtractRequest(BaseModel):

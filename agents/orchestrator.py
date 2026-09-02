@@ -14,7 +14,6 @@ from agents.scheduler.agent import SchedulerAgent, SchedulingContext
 from agents.scheduler.services.schedule_updater import ScheduleUpdater
 from agents.coach.agent import run_coach
 from agents.coach.models.schemas import CoachInput, FocusState
-from agents.evaluator.src.evaluator.evaluator_agent import EvaluatorAgent
 from models.task import Task
 from datetime import datetime, timedelta
 import uuid
@@ -379,62 +378,3 @@ def run_coaching_session(
     print(f"   Reasoning: {coach_action.reasoning}")
 
     return result
-
-
-def run_evaluation_step(
-    session_id: str = None,
-    task_id: str = None,
-    task_title: str = "",
-    task_description: str = "",
-    task_details: str = "",
-    student_answer: str = None,
-) -> dict:
-    """
-    Run an evaluation step to assess student mastery of a task.
-    This links the Evaluator Agent into the learning loop.
-
-    If session_id is None, it starts a new evaluation session for the task.
-    If student_answer is provided, it processes the answer.
-    """
-    evaluator = EvaluatorAgent()
-    
-    # We maintain sessions in the evaluator instance locally, but for a true 
-    # stateless orchestrator we would hydrate the session from the DB.
-    # For now, we assume the EvaluatorAgent manages its own session state in memory.
-    
-    if not session_id:
-        print(f"🎓 Starting new evaluation session for task: {task_title}")
-        result = evaluator.start_session(
-            task_title=task_title,
-            task_description=task_description,
-            task_details=task_details
-        )
-        return {
-            "action": "STARTED",
-            "session_id": result["session_id"],
-            "question": result["question"],
-        }
-    
-    if student_answer:
-        print(f"🎓 Evaluating student answer for session: {session_id}")
-        result = evaluator.handle_user_answer(session_id, student_answer)
-        
-        # Here we integrate with the scheduling loop based on the result
-        updater = ScheduleUpdater()
-        
-        if result.get("state") == "MASTERY_CONFIRMED":
-            print(f"✅ Student mastered the task! Moving to next task.")
-            # Spaced repetition & Adaptive Time Estimation
-            updater.handle_evaluation_result(task_id, task_title, result)
-            
-        elif result.get("state") == "FAILED":
-            print(f"❌ Student failed the task. Triggering reschedule...")
-            # Reschedule a review session
-            updater.handle_evaluation_result(task_id, task_title, result)
-            
-        elif result.get("state") == "CONTINUE":
-            print(f"🔄 Continuing evaluation...")
-            
-        return result
-    
-    return {"error": "Invalid parameters"}
