@@ -1,6 +1,6 @@
-pymongo>=4.0
-gpt4all==2.8.2
-openai-whisper>=20231117
+# Evaluator agent — LLM/DB/STT dependencies live in the repo root pyproject.toml.
+# The evaluator routes through the shared LiteLLM client (utils/llm_client.py);
+# session state is in-memory. This file only pins the direct test/validation
+# dependencies for the evaluator package itself.
 pydantic>=2.0
 pytest>=7.0
-pytest-cov>=4.0
