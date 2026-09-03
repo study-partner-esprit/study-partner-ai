@@ -13,6 +13,7 @@ from workers.schemas import (
     EVAL_ANSWER_MAX_CHARS,
     EVAL_ANSWER_MIN_CHARS,
     EVAL_CONTEXT_ID_MAX_CHARS,
+    EVAL_OBJECTIVE_ID_MAX_CHARS,
     EVAL_SESSION_ID_MAX_CHARS,
     EVAL_STEP_MIN,
     EvaluationRequest,
@@ -104,3 +105,37 @@ def test_step_must_be_at_least_one():
 def test_step_must_be_integer():
     with pytest.raises(ValidationError):
         EvaluationRequest.model_validate(valid(step="2"))
+
+
+# ---------------------------------------------------------------- EVAL-02b
+
+def test_accepts_target_bloom_level_and_knowledge_type():
+    """EVAL-02b: server-resolved objective context is carried as evaluation
+    context in the job payload (camelCase wire fields)."""
+    r = EvaluationRequest.model_validate(
+        valid(objectiveId="obj-1", targetBloomLevel="APPLY", knowledgeType="procedural")
+    )
+    assert r.objectiveId == "obj-1"
+    assert r.targetBloomLevel == "APPLY"
+    assert r.knowledgeType == "procedural"
+
+
+def test_target_context_defaults_to_none_when_absent():
+    r = EvaluationRequest.model_validate(valid())
+    assert r.objectiveId is None
+    assert r.targetBloomLevel is None
+    assert r.knowledgeType is None
+
+
+def test_target_bloom_level_length_bounds():
+    with pytest.raises(ValidationError):
+        EvaluationRequest.model_validate(
+            valid(targetBloomLevel="X" * (EVAL_OBJECTIVE_ID_MAX_CHARS + 1))
+        )
+
+
+def test_knowledge_type_length_bounds():
+    with pytest.raises(ValidationError):
+        EvaluationRequest.model_validate(
+            valid(knowledgeType="x" * (EVAL_OBJECTIVE_ID_MAX_CHARS + 1))
+        )

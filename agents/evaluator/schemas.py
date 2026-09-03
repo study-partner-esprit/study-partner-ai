@@ -117,6 +117,10 @@ class EvaluationSession(BaseModel):
     max_attempts: int = 5
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+    # EVAL-02b: target Bloom level resolved server-side from the learning
+    # objective and carried in the job payload as evaluation context.  Echoed
+    # in every EvaluationOutput so the backend can persist it per step.
+    target_bloom_level: Optional[str] = Field(default=None)
 
 
 # ============================================================================
