@@ -136,6 +136,13 @@ class EvaluatorWorker(BaseAIWorker):
             )
         if request.objectiveId is not None:
             record["objectiveId"] = request.objectiveId
+        # EVAL-02b: echo back the server-resolved target context so the Node
+        # backend can persist it alongside the step result for BLOOM-08
+        # competency updates.  Absent (omitted) when no objective targeting.
+        if request.targetBloomLevel is not None:
+            record["targetBloomLevel"] = request.targetBloomLevel
+        if request.knowledgeType is not None:
+            record["knowledgeType"] = request.knowledgeType
         return record
 
     def _run_step(self, request: EvaluationRequest) -> Dict[str, Any]:
@@ -152,6 +159,7 @@ class EvaluatorWorker(BaseAIWorker):
             task_title=context.get("task_title", ""),
             task_description=context.get("task_description", ""),
             task_details=context.get("task_details", ""),
+            target_bloom_level=request.targetBloomLevel,
         )
         return self.agent.handle_user_answer(request.session_id, request.student_answer)
 

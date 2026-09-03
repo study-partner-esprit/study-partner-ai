@@ -144,3 +144,45 @@ def test_concept_extraction_from_task_details():
         "backpropagation to train models on labeled data."
     )
     assert len(concepts) > 0
+
+
+def test_target_bloom_level_echoed_on_evaluation_output():
+    """EVAL-02b: the session target Bloom level (resolved server-side from the
+    learning objective) is stored on the session and echoed into every
+    EvaluationOutput so the backend can persist it per step."""
+    agent = make_agent()
+    sid = agent.start_session(
+        task_title="Python Lists",
+        task_description="How Python lists work",
+        task_details=(
+            "Lists are ordered mutable sequences written with square brackets; "
+            "they support indexing, slicing, append, extend, insert, remove, pop."
+        ),
+        max_attempts=5,
+        target_bloom_level="APPLY",
+    )["session_id"]
+
+    assert agent.get_session(sid).target_bloom_level == "APPLY"
+
+    result = agent.handle_user_answer(
+        sid,
+        "Python lists are ordered collections using square brackets. "
+        "You can append, insert, remove, and pop elements, and index or slice them.",
+    )
+    output = result["evaluation_output"]
+    assert output["target_bloom_level"] == "APPLY"
+
+
+def test_target_bloom_level_none_when_not_provided():
+    agent = make_agent()
+    sid = agent.start_session(
+        task_title="Recursion",
+        task_description="Recursive thinking",
+        task_details="Recursion requires a base case and a recursive case.",
+    )["session_id"]
+    assert agent.get_session(sid).target_bloom_level is None
+    result = agent.handle_user_answer(
+        sid,
+        "Recursion has a base case that stops and a recursive case that reduces the problem.",
+    )
+    assert result["evaluation_output"]["target_bloom_level"] is None

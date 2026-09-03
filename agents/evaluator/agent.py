@@ -81,6 +81,7 @@ class EvaluatorAgent:
         task_details: str,
         max_attempts: int = 5,
         session_id: Optional[str] = None,
+        target_bloom_level: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Start a new interactive evaluation session.
@@ -92,6 +93,9 @@ class EvaluatorAgent:
             max_attempts: Maximum number of attempts allowed
             session_id: Optional external session id (EVAL-02 bus contract);
                 a uuid is generated when omitted (legacy/EVAL-01 behaviour)
+            target_bloom_level: Optional Bloom level the session should target,
+                resolved server-side from the learning objective (EVAL-02b);
+                echoed in every evaluation output.
 
         Returns:
             Dict with `session_id` and first `question`
@@ -114,6 +118,7 @@ class EvaluatorAgent:
             context=context,
             max_attempts=max_attempts,
             state=SessionState.ASKING,
+            target_bloom_level=target_bloom_level,
         )
 
         # Generate first Socratic question
@@ -207,6 +212,7 @@ class EvaluatorAgent:
                     session_status="FAILED",
                     student_answer=user_answer,
                     key_concepts=session.context.key_concepts,
+                    target_bloom_level=session.target_bloom_level,
                 )
                 result["evaluation_output"] = output.model_dump()
                 return result
@@ -264,6 +270,7 @@ class EvaluatorAgent:
             student_answer=user_answer,
             key_concepts=session.context.key_concepts,
             next_question=result.get("next_question"),
+            target_bloom_level=session.target_bloom_level,
         )
         result["evaluation_output"] = output.model_dump()
 

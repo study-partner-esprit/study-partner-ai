@@ -48,6 +48,8 @@ def start_payload(
     session_id: str = "sess-eval08",
     answer: str = "Recursion needs a base case that stops it and a recursive case that reduces the problem.",
     objective_id: str | None = None,
+    target_bloom: str | None = None,
+    knowledge_type: str | None = None,
 ) -> dict:
     payload = {
         "sessionId": session_id,
@@ -57,6 +59,10 @@ def start_payload(
     }
     if objective_id is not None:
         payload["objectiveId"] = objective_id
+    if target_bloom is not None:
+        payload["targetBloomLevel"] = target_bloom
+    if knowledge_type is not None:
+        payload["knowledgeType"] = knowledge_type
     return payload
 
 
@@ -169,3 +175,47 @@ def test_request_rejects_blank_objective_id():
 def test_request_rejects_overlong_objective_id():
     with pytest.raises(ValidationError):
         EvaluationRequest.model_validate(start_payload(objective_id="o" * 65))
+
+
+# ---------------------------------------------------- EVAL-02b target context
+
+def test_with_step_record_carries_target_bloom_and_knowledge_type():
+    """EVAL-02b: server-resolved objective context echoes back onto the per-step
+    record so the Node backend persists it alongside the result."""
+    worker = make_worker()
+    request = EvaluationRequest.model_validate(
+        start_payload(
+            objective_id="obj-apply",
+            target_bloom="APPLY",
+            knowledge_type="procedural",
+        )
+    )
+    result = {"session_id": "sess-target", "state": "CONTINUE", "mastery_score": 0.7}
+
+    record = worker._with_step_record(result, request)
+
+    assert record["objectiveId"] == "obj-apply"
+    assert record["targetBloomLevel"] == "APPLY"
+    assert record["knowledgeType"] == "procedural"
+
+
+def test_with_step_record_omits_target_context_when_absent():
+    """No objective targeting → the record stays additive; target keys are NOT
+    injected as nulls so absent stays absent."""
+    worker = make_worker()
+    request = EvaluationRequest.model_validate(start_payload())
+    record = worker._with_step_record(
+        {"session_id": "sess-notarget", "state": "CONTINUE", "mastery_score": 0.5},
+        request,
+    )
+    assert "targetBloomLevel" not in record
+    assert "knowledgeType" not in record
+    assert "objectiveId" not in record
+
+
+def test_request_accepts_target_bloom_and_knowledge_type():
+    request = EvaluationRequest.model_validate(
+        start_payload(objective_id="obj-1", target_bloom="ANALYZE", knowledge_type="conceptual")
+    )
+    assert request.targetBloomLevel == "ANALYZE"
+    assert request.knowledgeType == "conceptual"

@@ -285,6 +285,21 @@ class EvaluationRequest(BaseModel):
         max_length=EVAL_OBJECTIVE_ID_MAX_CHARS,
         description="Learning-objective id (F14). Optional; persisted per step when present.",
     )
+    # EVAL-02b: server-resolved target context.  Node resolves the objective's
+    # bloomLevel + knowledgeType from the shared learning_objectives collection
+    # (Python never touches Mongo) and carries them as camelCase wire fields in
+    # the job payload so the worker can target the session's question depth.
+    # Absent when objectiveId is absent (no targeting).
+    targetBloomLevel: Optional[str] = Field(
+        None,
+        max_length=EVAL_OBJECTIVE_ID_MAX_CHARS,
+        description="Bloom level echoed from the resolved learning objective.",
+    )
+    knowledgeType: Optional[str] = Field(
+        None,
+        max_length=EVAL_OBJECTIVE_ID_MAX_CHARS,
+        description="Knowledge type from the resolved learning objective.",
+    )
 
     @field_validator("sessionId", "contextId", "studentAnswer")
     @classmethod
