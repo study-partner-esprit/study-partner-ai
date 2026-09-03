@@ -50,6 +50,19 @@ COURSE_ID_MAX_CHARS = 64
 DOCUMENT_ID_MAX_CHARS = 64
 CONTENT_REF_MAX_CHARS = 256
 
+# Search input limits (SEARCH-02) — keep in sync with payloadSchemas.js
+SEARCH_QUERY_MIN_CHARS = 1
+SEARCH_QUERY_MAX_CHARS = 500
+SEARCH_MAX_RESULTS_MIN = 1
+SEARCH_MAX_RESULTS_MAX = 10
+SEARCH_SESSION_ID_MAX_CHARS = 64
+
+# Search output limits (SEARCH-04) — answer/source bounds
+SEARCH_ANSWER_MAX_CHARS = 2000
+SEARCH_MAX_SOURCES = 10
+SEARCH_SOURCE_TITLE_MAX_CHARS = 300
+SEARCH_VOICE_SUMMARY_MAX_CHARS = 2000
+
 
 class WeakCompetencyRequest(BaseModel):
     """One weak competency entry (BLOOM-10), from the Node competency profile.
@@ -350,3 +363,102 @@ class KnowledgeExtractRequest(BaseModel):
         if not v.strip():
             raise ValueError("must be a non-empty string")
         return v
+
+
+class SearchSource(BaseModel):
+    """A single cited source in a search result (SEARCH-04).
+
+    URLs must be http/https (validated); the backend trusts the extracted value
+    but re-validates scheme. Title is display text, length-bounded.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(..., max_length=2048)
+    title: Optional[str] = Field(default=None, max_length=SEARCH_SOURCE_TITLE_MAX_CHARS)
+
+    @field_validator("url")
+    @classmethod
+    def _url_http_only(cls, v: str) -> str:
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("source url must be http(s)")
+        return v
+
+
+class SearchOutput(BaseModel):
+    """Validated `study.search.query` result (SEARCH-04).
+
+    ``answer`` is the user-facing response (<= SEARCH_ANSWER_MAX_CHARS);
+    ``sources`` lists cited URLs + titles (<= SEARCH_MAX_SOURCES) and is
+    REQUIRED non-empty per SEARCH-05; ``voice_summary`` is optional and used
+    only when the query requested voice mode. ``degraded`` signals a graceful
+    fallback (e.g. no sources retrieved) rather than a hard failure.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    answer: str = Field(..., min_length=1, max_length=SEARCH_ANSWER_MAX_CHARS)
+    sources: List[SearchSource] = Field(default_factory=list)
+    voice_summary: Optional[str] = Field(
+        default=None, max_length=SEARCH_VOICE_SUMMARY_MAX_CHARS
+    )
+    degraded: bool = Field(default=False)
+
+    @field_validator("answer", "voice_summary")
+    @classmethod
+    def _not_blank_if_present(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("field must not be blank")
+        return v
+
+    @field_validator("sources")
+    @classmethod
+    def _sources_bounded(cls, v: List["SearchSource"]) -> List["SearchSource"]:
+        if len(v) > SEARCH_MAX_SOURCES:
+            raise ValueError(f"sources exceeds {SEARCH_MAX_SOURCES} items")
+        return v
+
+
+class SearchRequest(BaseModel):
+    """Validated payload for `study.search.query` jobs (SEARCH-02).
+
+    Wire fields are camelCase to match the Node edge validator + publisher
+    (`payloadSchemas.js`). ``query`` is the user's natural-language question
+    (1-500 chars); ``maxResults`` caps returned sources (1-10); ``voiceMode``
+    requests an optional ``voice_summary``. ``userId`` is deliberately absent —
+    it only ever comes from the authenticated envelope. Rate limiting (10/min
+    per user) is enforced at the Node edge, not here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(
+        ..., min_length=SEARCH_QUERY_MIN_CHARS, max_length=SEARCH_QUERY_MAX_CHARS
+    )
+    maxResults: int = Field(
+        default=5,
+        ge=SEARCH_MAX_RESULTS_MIN,
+        le=SEARCH_MAX_RESULTS_MAX,
+        strict=True,
+    )
+    voiceMode: bool = Field(default=False, strict=True)
+    sessionId: Optional[str] = Field(default=None, max_length=SEARCH_SESSION_ID_MAX_CHARS)
+
+    @field_validator("query")
+    @classmethod
+    def _query_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("query must not be blank")
+        return v
+
+    @property
+    def max_results(self) -> int:
+        return self.maxResults
+
+    @property
+    def voice_mode(self) -> bool:
+        return self.voiceMode
+
+    @property
+    def session_id(self) -> Optional[str]:
+        return self.sessionId

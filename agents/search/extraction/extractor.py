@@ -3,7 +3,10 @@ import socket
 from urllib.parse import urlsplit, urljoin
 
 import requests
-from bs4 import BeautifulSoup
+
+# NOTE: BeautifulSoup is imported lazily inside extract_text so the search
+# pipeline + worker can be imported (and unit-tested) without bs4 installed;
+# real HTML parsing only happens when bs4 is present in the runtime env.
 
 # Blocks private / loopback / link-local / reserved networks so extraction
 # can never be redirected into the internal network (SSRF).
@@ -144,6 +147,8 @@ def extract_text(url, max_chars=12000, max_bytes=400000, request_timeout=(3, 7))
         response.close()
 
         html = "".join(chunks)
+        from bs4 import BeautifulSoup
+
         soup = BeautifulSoup(html, "html.parser")
 
         for tag in soup(["script", "style", "header", "footer", "nav", "aside"]):
