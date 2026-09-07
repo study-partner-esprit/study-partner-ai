@@ -96,6 +96,7 @@ class FakeCoachOrchestrator:
         live_focus_state=None,
         live_fatigue_score=None,
         live_fatigue_state=None,
+        live_affective_state=None,
     ):
         self.calls.append(
             {
@@ -108,6 +109,7 @@ class FakeCoachOrchestrator:
                 "live_focus_state": live_focus_state,
                 "live_fatigue_score": live_fatigue_score,
                 "live_fatigue_state": live_fatigue_state,
+                "live_affective_state": live_affective_state,
             }
         )
         return self.behaviour(**self.calls[-1])

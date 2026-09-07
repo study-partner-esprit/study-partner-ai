@@ -157,12 +157,21 @@ class CoachSignal(BaseModel):
     focus_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     fatigue_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     focus_trend: Optional[float] = None
+    # COACH-15: emotion reading, mirrors focus/fatigue on this bounded
+    # per-signal schema. Populated once COACH-13 wires the signals window
+    # into the coach context; validated here now so historical/incoming
+    # payloads carrying it are already accepted.
+    affective_state: Optional[
+        Literal["engaged", "frustrated", "stressed", "bored", "confident"]
+    ] = None
+    affective_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
 
     @field_validator(
         "focus_score",
         "fatigue_score",
         "focus_confidence",
         "fatigue_confidence",
+        "affective_confidence",
         mode="before",
     )
     @classmethod
@@ -209,11 +218,22 @@ class CoachRequest(BaseModel):
     focus_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     fatigue_state: Optional[Literal["Alert", "Moderate", "High", "Critical"]] = None
     fatigue_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    # COACH-15: live emotion reading, same "flattened live field" pattern as
+    # focus_state/fatigue_state above — consumed via to_coach_context() as
+    # live_affective_state. affective_confidence is carried for completeness
+    # (bounded signals / future use) but is not currently forwarded to
+    # run_coach(), since CoachInput.affective_state has no confidence field
+    # of its own (confidence thresholding for the DB-backed path already
+    # happens in SignalProcessingService).
+    affective_state: Optional[
+        Literal["engaged", "frustrated", "stressed", "bored", "confident"]
+    ] = None
+    affective_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     ignored_count: int = Field(default=0, ge=0)
     do_not_disturb: bool = Field(default=False, strict=True)
     current_time: Optional[datetime] = None
 
-    @field_validator("focus_score", "fatigue_score", mode="before")
+    @field_validator("focus_score", "fatigue_score", "affective_confidence", mode="before")
     @classmethod
     def _no_boolean_score(cls, v):
         # lax mode otherwise coerces True->1.0; reject to match the JS edge
@@ -251,6 +271,7 @@ class CoachRequest(BaseModel):
             "live_focus_state": self.focus_state,
             "live_fatigue_score": self.fatigue_score,
             "live_fatigue_state": self.fatigue_state,
+            "live_affective_state": self.affective_state,
         }
 
 

@@ -48,6 +48,16 @@ class SignalSnapshot(BaseModel):
         "Negative = declining focus.",
     )
 
+    # Emotion signal (COACH-15) — produced by EmotionAdapter, mirrors the
+    # focus/fatigue state+confidence pattern. Optional so existing snapshots
+    # without an emotion reading remain valid.
+    affective_state: Optional[
+        Literal["engaged", "frustrated", "stressed", "bored", "confident"]
+    ] = Field(default=None, description="Mapped affective state from the FER model.")
+    affective_confidence: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="Confidence of the mapped affective state (0-1)."
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
