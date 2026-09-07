@@ -2,8 +2,9 @@ import json
 import os
 from datetime import datetime
 
-from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
-from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from pydantic import ValidationError
+
+from agents.coach.context.preprocess import window_history
 from agents.coach.decision.output_parser import (
     SANITIZED_OUTPUT_VALIDATION_ERROR,
     CoachOutputError,
@@ -16,8 +17,8 @@ from agents.coach.decision.output_validator import (
     gemini_content_guard,
     sanitize_nudge,
 )
-from agents.coach.context.preprocess import window_history
-from pydantic import ValidationError
+from agents.coach.decision.prompt import SYSTEM_PROMPT, build_user_prompt
+from agents.coach.models.schemas import CoachAction, CoachInput, ScheduledTask
 from utils.llm_client import LLMRequestError, ask
 from utils.logger import get_logger
 
@@ -243,7 +244,9 @@ def decide_with_llm(
 
     # COACH-04: only the most recent, relevant coaching history reaches the
     # prompt (windowed by count and age, configurable via env).
-    recent_history = window_history(recent_history) if recent_history else recent_history
+    recent_history = (
+        window_history(recent_history) if recent_history else recent_history
+    )
 
     user_prompt = build_user_prompt(
         state,
@@ -266,7 +269,9 @@ def _decide_with_retry(user_prompt: str, content_guard, trace_id: str) -> CoachA
 
     problems: list[str] = []
     for attempt in range(1, 3):  # first pass + one correction retry
-        prompt = user_prompt if attempt == 1 else user_prompt + _correction_note(problems)
+        prompt = (
+            user_prompt if attempt == 1 else user_prompt + _correction_note(problems)
+        )
         raw = call_gemini(SYSTEM_PROMPT, prompt, trace_id=trace_id)
         try:
             parsed = parse_response(raw)
@@ -302,7 +307,11 @@ def _decide_with_retry(user_prompt: str, content_guard, trace_id: str) -> CoachA
 
         logger.warning(
             "coach_output_rejected",
-            extra={"attempt": attempt, "reason": "; ".join(problems[:3]), "trace_id": trace_id},
+            extra={
+                "attempt": attempt,
+                "reason": "; ".join(problems[:3]),
+                "trace_id": trace_id,
+            },
         )
 
     raise CoachOutputRejectedError(_rejected_reason(problems))

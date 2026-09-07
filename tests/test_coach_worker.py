@@ -137,6 +137,7 @@ async def consume(worker, message):
 
 # ---------------------------------------------------------------- happy path
 
+
 async def test_valid_payload_publishes_completed_result():
     worker, orchestrator = make_worker()
     msg = FakeMessage(
@@ -232,11 +233,12 @@ async def test_lazy_orchestrator_not_built_until_first_handle():
                 self._orchestrator = object()  # would explode if used as real one
             return self._orchestrator
 
-    w = CountingWorker(idempotency_store=InMemoryIdempotencyStore())
+    CountingWorker(idempotency_store=InMemoryIdempotencyStore())
     assert built["count"] == 0  # constructor did not touch the orchestrator
 
 
 # ----------------------------------------------------------- invalid input
+
 
 async def test_non_object_payload_is_terminal():
     worker, orchestrator = make_worker()
@@ -283,6 +285,7 @@ async def test_invalid_current_time_is_terminal():
 
 
 # ------------------------------------------------- COACH-02 bounded schema
+
 
 def focused_signal() -> dict:
     return {
@@ -372,6 +375,7 @@ async def test_boolean_for_numeric_field_is_terminal():
 
 # ------------------------------------------------------------ retry policy
 
+
 async def test_transient_orchestrator_failure_schedules_retry():
     def boom(**kw):
         raise RetryableError("LLM timeout")
@@ -394,6 +398,7 @@ async def test_transient_orchestrator_failure_schedules_retry():
 
 
 # ------------------------------------------------------------ JSON-safety
+
 
 async def test_result_payload_is_json_safe():
     def action_with_schedule(**kw):
