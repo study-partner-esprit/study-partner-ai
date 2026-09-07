@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
@@ -61,19 +63,60 @@ jobs:
       - name: 📥 Install dependencies
         run: poetry install --with dev
 
+      - name: 🔎 Find changed Python files
+        id: changed-python-files
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+            agents bloom models tests \
+            | grep -E '\.py$' || true)
+          {
+            echo 'files<<EOF'
+            echo "$files"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       # Black - Code formatting check
-      # NOTE: extended to cover bloom/, models/, tests/ (repo-root modules)
-      # alongside agents/ — previously these were never linted in CI.
       - name: 🎨 Check Black formatting
-        run: poetry run black --check --diff agents/ bloom/ models/ tests/
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.changed-python-files.outputs.files }}
+        run: |
+          if [[ -z "${CHANGED_FILES//[[:space:]]/}" ]]; then
+            echo "No changed Python files to check."
+            exit 0
+          fi
+          mapfile -t files <<< "$CHANGED_FILES"
+          poetry run black --check --diff "${files[@]}"
 
       # Flake8 - Python linting
       - name: 🔍 Run Flake8 linting
-        run: poetry run flake8 agents/ bloom/ models/ tests/ --count --statistics --show-source --max-line-length=88 --extend-ignore=E501,E402
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.changed-python-files.outputs.files }}
+        run: |
+          if [[ -z "${CHANGED_FILES//[[:space:]]/}" ]]; then
+            echo "No changed Python files to check."
+            exit 0
+          fi
+          mapfile -t files <<< "$CHANGED_FILES"
+          poetry run flake8 "${files[@]}" --count --statistics --show-source --max-line-length=88 --extend-ignore=E501,E402
 
       # isort - Import sorting check
       - name: 📝 Check import sorting (isort)
-        run: poetry run isort --check-only --diff agents/ bloom/ models/ tests/
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.changed-python-files.outputs.files }}
+        run: |
+          if [[ -z "${CHANGED_FILES//[[:space:]]/}" ]]; then
+            echo "No changed Python files to check."
+            exit 0
+          fi
+          mapfile -t files <<< "$CHANGED_FILES"
+          poetry run isort --check-only --diff "${files[@]}"
         continue-on-error: true
 
   # ===========================================================================
