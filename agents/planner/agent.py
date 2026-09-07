@@ -292,7 +292,9 @@ class PlannerAgent:
                 return len(disk_chunks)
             # Recovery path: rebuild index from stored embeddings when index files are missing/corrupt.
             disk_embeddings = load_embeddings(course_id)
-            if disk_embeddings is not None and len(course_texts) == len(disk_embeddings):
+            if disk_embeddings is not None and len(course_texts) == len(
+                disk_embeddings
+            ):
                 rebuilt_index, rebuilt_chunks = rebuild_index_from_embeddings(
                     course_id, course_texts, disk_embeddings
                 )
@@ -338,12 +340,19 @@ class PlannerAgent:
 
         # Try LLM decomposer first for specific goals
         logger.debug("planner_llm_decompose", extra={"goal": goal})
-        llm_tasks = self.llm_decomposer.decompose(
-            goal,
-            concepts,
-            available_minutes,
-            weak_competencies=weak_competencies or [],
-        )
+        try:
+            llm_tasks = self.llm_decomposer.decompose(
+                goal,
+                concepts,
+                available_minutes,
+                weak_competencies=weak_competencies or [],
+            )
+        except ValueError as exc:
+            logger.info(
+                "planner_llm_decompose_fallback",
+                extra={"reason": str(exc)},
+            )
+            llm_tasks = None
         if llm_tasks and len(llm_tasks) > 1:
             logger.debug(
                 "planner_llm_decompose_ok", extra={"num_tasks": len(llm_tasks)}
@@ -478,7 +487,6 @@ class PlannerAgent:
             List of AtomicTask objects covering the course
         """
         from agents.planner.models.task_graph import AtomicTask
-        import uuid
 
         tasks = []
         task_id_counter = 1
