@@ -45,11 +45,33 @@ class SignalProcessingService:
             print(f"⚠ Signal processing service initialization failed: {e}")
             self._initialized = False
 
+        # COACH-15: emotion adapter is initialized separately from
+        # focus/fatigue on purpose. A missing/broken emotion model must
+        # degrade gracefully (affective_state falls back downstream) and
+        # must NOT disable focus/fatigue signal processing.
+        self.emotion_adapter = None
+        self._emotion_initialized = False
+        try:
+            from services.signal_processing_service.emotion_adapter import (
+                EmotionAdapter,
+            )
+
+            self.emotion_adapter = EmotionAdapter()
+            self._emotion_initialized = True
+            print("✓ Emotion adapter initialized successfully")
+        except Exception as e:
+            print(f"⚠ Emotion adapter initialization failed: {e}")
+            self._emotion_initialized = False
+
         self.repository = SignalRepository()
 
     def is_ready(self) -> bool:
         """Check if the signal processing service is ready to process signals."""
         return getattr(self, "_initialized", False)
+
+    def is_emotion_ready(self) -> bool:
+        """Check if the emotion adapter is ready to process signals."""
+        return getattr(self, "_emotion_initialized", False)
 
     def get_current_signal_snapshot(
         self,
@@ -95,10 +117,25 @@ class SignalProcessingService:
             self.fatigue_adapter.get_fatigue_signal(frame=video_frame)
         )
 
-        # Apply confidence threshold
+        # Collect emotion signal (COACH-15). Reuses the same raw video_frame
+        # as fatigue detection — the FER model runs its own MediaPipe face
+        # detector on it, independent of the fatigue landmarker. Missing/
+        # unready adapter degrades to a neutral, zero-confidence reading
+        # rather than raising, so focus/fatigue processing is unaffected.
+        if self.is_emotion_ready():
+            affective_state, affective_confidence = (
+                self.emotion_adapter.get_emotion_signal(frame=video_frame)
+            )
+        else:
+            affective_state, affective_confidence = "engaged", 0.0
+
+        # Apply confidence threshold (same policy extended to the emotion
+        # signal: any low-confidence reading — focus, fatigue, or emotion —
+        # triggers the recent-snapshot fallback).
         if (
             focus_confidence < self.MIN_CONFIDENCE_THRESHOLD
             or fatigue_confidence < self.MIN_CONFIDENCE_THRESHOLD
+            or affective_confidence < self.MIN_CONFIDENCE_THRESHOLD
         ):
             # Low confidence - check if we have a recent reliable signal
             recent_snapshot = self.repository.get_latest_signal_snapshot(user_id)
@@ -109,13 +146,17 @@ class SignalProcessingService:
                 ).total_seconds()
                 if age_seconds < 300:  # 5 minutes
                     print(
-                        f"Using recent signal due to low confidence (focus: {focus_confidence:.2f}, fatigue: {fatigue_confidence:.2f})"
+                        f"Using recent signal due to low confidence "
+                        f"(focus: {focus_confidence:.2f}, fatigue: {fatigue_confidence:.2f}, "
+                        f"affective: {affective_confidence:.2f})"
                     )
                     return recent_snapshot
 
             # No recent signal - use the low-confidence prediction anyway
             print(
-                f"Warning: Low confidence for signals (focus: {focus_confidence:.2f}, fatigue: {fatigue_confidence:.2f})"
+                f"Warning: Low confidence for signals "
+                f"(focus: {focus_confidence:.2f}, fatigue: {fatigue_confidence:.2f}, "
+                f"affective: {affective_confidence:.2f})"
             )
 
         # Create snapshot
@@ -128,6 +169,8 @@ class SignalProcessingService:
             fatigue_state=fatigue_state,
             fatigue_score=fatigue_score,
             fatigue_confidence=fatigue_confidence,
+            affective_state=affective_state,
+            affective_confidence=affective_confidence,
         )
 
         # Persist the snapshot

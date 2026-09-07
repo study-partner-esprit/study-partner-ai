@@ -53,6 +53,7 @@ class AIOrchestrator:
         live_focus_state: Optional[str] = None,
         live_fatigue_score: Optional[float] = None,
         live_fatigue_state: Optional[str] = None,
+        live_affective_state: Optional[str] = None,
     ) -> CoachAction:
         """
         Execute the Coach agent with full user context.
@@ -83,6 +84,7 @@ class AIOrchestrator:
             or live_focus_state is not None
             or live_fatigue_score is not None
             or live_fatigue_state is not None
+            or live_affective_state is not None
         )
 
         # --- Parallel I/O: fetch tasks + signal snapshot simultaneously --- #
@@ -127,6 +129,7 @@ class AIOrchestrator:
             live_focus_state=live_focus_state,
             live_fatigue_score=live_fatigue_score,
             live_fatigue_state=live_fatigue_state,
+            live_affective_state=live_affective_state,
         )
 
         # Step 4: Execute Coach agent (history lookup + action persistence inside)
@@ -205,6 +208,7 @@ class AIOrchestrator:
         live_focus_state: Optional[str] = None,
         live_fatigue_score: Optional[float] = None,
         live_fatigue_state: Optional[str] = None,
+        live_affective_state: Optional[str] = None,
     ) -> CoachInput:
         """
         Build the CoachInput from all available data.
@@ -240,7 +244,18 @@ class AIOrchestrator:
         else:
             fatigue_state = FatigueState(state="Moderate", score=0.3)
 
-        affective_state = "engaged"  # derive from signals in future
+        # COACH-15: priority is live webcam signal > DB snapshot > neutral
+        # default — same precedence policy already used for focus/fatigue
+        # above. Confidence thresholding/fallback for the DB-backed path is
+        # handled upstream in SignalProcessingService.get_current_signal_snapshot();
+        # by the time a snapshot reaches here it is already the best
+        # available reading.
+        if live_affective_state is not None:
+            affective_state = live_affective_state
+        elif signal_snapshot is not None and signal_snapshot.affective_state is not None:
+            affective_state = signal_snapshot.affective_state
+        else:
+            affective_state = "engaged"
         is_late = self._check_if_late(scheduled_tasks, current_time)
 
         return CoachInput(
