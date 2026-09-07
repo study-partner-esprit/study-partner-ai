@@ -11,13 +11,7 @@ import json
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    field_validator,
-    model_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Canonical limits (keep in sync with payloadSchemas.js)
 GOAL_MAX_CHARS = 500
@@ -104,9 +98,13 @@ class PlannerRequest(BaseModel):
 
     @field_validator("weak_competencies")
     @classmethod
-    def _weak_competencies_bounded(cls, v: List[WeakCompetencyRequest]) -> List[WeakCompetencyRequest]:
+    def _weak_competencies_bounded(
+        cls, v: List[WeakCompetencyRequest]
+    ) -> List[WeakCompetencyRequest]:
         if len(v) > WEAK_COMPETENCIES_MAX_ITEMS:
-            raise ValueError(f"weak_competencies exceeds {WEAK_COMPETENCIES_MAX_ITEMS} items")
+            raise ValueError(
+                f"weak_competencies exceeds {WEAK_COMPETENCIES_MAX_ITEMS} items"
+            )
         for wc in v:
             for level, score in wc.scores.items():
                 if not isinstance(score, (int, float)) or not (0 <= score <= 1):
@@ -212,8 +210,12 @@ class CoachRequest(BaseModel):
     session_id: Optional[str] = Field(
         default=None, max_length=COACH_SESSION_ID_MAX_CHARS
     )
-    signals: List[CoachSignal] = Field(default_factory=list, max_length=COACH_MAX_SIGNALS)
-    messages: List[CoachMessage] = Field(default_factory=list, max_length=COACH_MAX_MESSAGES)
+    signals: List[CoachSignal] = Field(
+        default_factory=list, max_length=COACH_MAX_SIGNALS
+    )
+    messages: List[CoachMessage] = Field(
+        default_factory=list, max_length=COACH_MAX_MESSAGES
+    )
     focus_state: Optional[Literal["Focused", "Drifting", "Lost"]] = None
     focus_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     fatigue_state: Optional[Literal["Alert", "Moderate", "High", "Critical"]] = None
@@ -233,7 +235,9 @@ class CoachRequest(BaseModel):
     do_not_disturb: bool = Field(default=False, strict=True)
     current_time: Optional[datetime] = None
 
-    @field_validator("focus_score", "fatigue_score", "affective_confidence", mode="before")
+    @field_validator(
+        "focus_score", "fatigue_score", "affective_confidence", mode="before"
+    )
     @classmethod
     def _no_boolean_score(cls, v):
         # lax mode otherwise coerces True->1.0; reject to match the JS edge
@@ -255,8 +259,7 @@ class CoachRequest(BaseModel):
             size = len(json.dumps(value, separators=(",", ":")).encode("utf-8"))
             if size > COACH_MAX_PAYLOAD_BYTES:
                 raise ValueError(
-                    f"payload exceeds {COACH_MAX_PAYLOAD_BYTES} bytes "
-                    f"(got {size})"
+                    f"payload exceeds {COACH_MAX_PAYLOAD_BYTES} bytes " f"(got {size})"
                 )
         return value
 

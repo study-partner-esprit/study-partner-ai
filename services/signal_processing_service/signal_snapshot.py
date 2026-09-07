@@ -3,9 +3,10 @@
 This module defines the data structure for ML-based user state signals.
 """
 
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
 from datetime import datetime
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class SignalSnapshot(BaseModel):
@@ -55,7 +56,10 @@ class SignalSnapshot(BaseModel):
         Literal["engaged", "frustrated", "stressed", "bored", "confident"]
     ] = Field(default=None, description="Mapped affective state from the FER model.")
     affective_confidence: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0, description="Confidence of the mapped affective state (0-1)."
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence of the mapped affective state (0-1).",
     )
 
     class Config:

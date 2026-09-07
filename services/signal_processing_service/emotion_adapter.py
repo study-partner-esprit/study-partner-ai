@@ -13,8 +13,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+from services.signal_processing_service.emotion_mapping import FER_EMOTIONS as EMOTIONS
 from services.signal_processing_service.emotion_mapping import (
-    FER_EMOTIONS as EMOTIONS,
     map_probabilities_to_affective_state,
 )
 
@@ -90,20 +90,26 @@ class EmotionAdapter:
         """Reconstruct the architecture and load the available model weights."""
         try:
             if not os.path.exists(self.weights_path):
-                print(f"Warning: emotion model weights not found at {self.weights_path}")
+                print(
+                    f"Warning: emotion model weights not found at {self.weights_path}"
+                )
                 return
             self.model = self._build_model()
             try:
                 self.model.load_weights(self.weights_path)
                 loaded_from = self.weights_path
             except Exception as h5_error:
-                npz_path = Path(self.weights_path).parent / "emotion_model_weights_arrays.npz"
+                npz_path = (
+                    Path(self.weights_path).parent / "emotion_model_weights_arrays.npz"
+                )
                 if not npz_path.exists():
                     raise h5_error
                 weights = np.load(npz_path)
                 self.model.set_weights([weights[key] for key in weights.files])
                 loaded_from = str(npz_path)
-                print(f"Warning: H5 weights incompatible; loaded NPZ weights instead ({h5_error})")
+                print(
+                    f"Warning: H5 weights incompatible; loaded NPZ weights instead ({h5_error})"
+                )
             print(f"Emotion model loaded successfully from {loaded_from}")
         except Exception as e:
             print(f"Error loading emotion model: {e}")
@@ -119,12 +125,18 @@ class EmotionAdapter:
         x = inputs
         for filters, dropout in [(32, 0.25), (64, 0.30), (128, 0.35)]:
             x = layers.Conv2D(
-                filters, 3, padding="same", activation="relu",
+                filters,
+                3,
+                padding="same",
+                activation="relu",
                 kernel_regularizer=regularizers.l2(1e-4),
             )(x)
             x = layers.BatchNormalization()(x)
             x = layers.Conv2D(
-                filters, 3, padding="same", activation="relu",
+                filters,
+                3,
+                padding="same",
+                activation="relu",
                 kernel_regularizer=regularizers.l2(1e-4),
             )(x)
             x = layers.BatchNormalization()(x)
@@ -132,14 +144,19 @@ class EmotionAdapter:
             x = layers.Dropout(dropout)(x)
 
         x = layers.Conv2D(
-            256, 3, padding="same", activation="relu",
+            256,
+            3,
+            padding="same",
+            activation="relu",
             kernel_regularizer=regularizers.l2(1e-4),
         )(x)
         x = layers.BatchNormalization()(x)
         x = layers.Dropout(0.40)(x)
 
         x = layers.GlobalAveragePooling2D()(x)
-        x = layers.Dense(128, activation="relu", kernel_regularizer=regularizers.l2(1e-4))(x)
+        x = layers.Dense(
+            128, activation="relu", kernel_regularizer=regularizers.l2(1e-4)
+        )(x)
         x = layers.Dropout(0.5)(x)
         outputs = layers.Dense(7, activation="softmax", name="emotion_output")(x)
 
@@ -148,7 +165,9 @@ class EmotionAdapter:
     def _load_face_detector(self):
         try:
             if not os.path.exists(self.face_model_path):
-                print(f"Warning: face detector model not found at {self.face_model_path}")
+                print(
+                    f"Warning: face detector model not found at {self.face_model_path}"
+                )
                 return
             base_options = mp_python.BaseOptions(model_asset_path=self.face_model_path)
             options = vision.FaceDetectorOptions(base_options=base_options)
@@ -207,7 +226,9 @@ class EmotionAdapter:
             raw_probs = self.model.predict(x, verbose=0)[0]
             calibrated = self._apply_temperature(raw_probs)
 
-            probabilities = {name: float(calibrated[i]) for i, name in enumerate(EMOTIONS)}
+            probabilities = {
+                name: float(calibrated[i]) for i, name in enumerate(EMOTIONS)
+            }
             return map_probabilities_to_affective_state(probabilities)
 
         except Exception as e:

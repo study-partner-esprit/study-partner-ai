@@ -57,7 +57,8 @@ def map_probabilities_to_affective_state(
         "confident": p.get("Happy", 0.0),
         "engaged": p.get("Neutral", 0.0) + p.get("Surprise", 0.0),
         "frustrated": p.get("Angry", 0.0) + p.get("Disgust", 0.0),
-        "stressed": p.get("Fear", 0.0) + p.get("Sad", 0.0),  # Sad -> stressed (assumption)
+        "stressed": p.get("Fear", 0.0)
+        + p.get("Sad", 0.0),  # Sad -> stressed (assumption)
     }
 
     affective_state: AffectiveState = max(groups, key=groups.get)  # type: ignore[arg-type]

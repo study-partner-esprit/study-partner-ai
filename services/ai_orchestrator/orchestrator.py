@@ -7,16 +7,16 @@ Parallel I/O via ThreadPoolExecutor; trace_id propagation throughout.
 
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
 from datetime import datetime
+from typing import Optional
 
 from agents.coach.agent import run_coach
 from agents.coach.models.schemas import (
-    CoachInput,
     CoachAction,
-    ScheduledTask,
-    FocusState,
+    CoachInput,
     FatigueState,
+    FocusState,
+    ScheduledTask,
 )
 from agents.coach.services.planner_repository import PlannerRepository
 from services.signal_processing_service.service import SignalProcessingService
@@ -252,7 +252,9 @@ class AIOrchestrator:
         # available reading.
         if live_affective_state is not None:
             affective_state = live_affective_state
-        elif signal_snapshot is not None and signal_snapshot.affective_state is not None:
+        elif (
+            signal_snapshot is not None and signal_snapshot.affective_state is not None
+        ):
             affective_state = signal_snapshot.affective_state
         else:
             affective_state = "engaged"

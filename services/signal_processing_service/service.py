@@ -4,15 +4,14 @@ This service coordinates the collection of signals from multiple ML models,
 normalizes their outputs, applies confidence thresholds, and persists the results.
 """
 
-from typing import Optional
 from datetime import datetime
-
-from services.signal_processing_service.signal_snapshot import SignalSnapshot
+from typing import Optional
 
 # Lazy imports to avoid startup crashes
 # from services.signal_processing_service.focus_adapter import FocusAdapter
 # from services.signal_processing_service.fatigue_adapter import FatigueAdapter
 from services.signal_processing_service.repository import SignalRepository
+from services.signal_processing_service.signal_snapshot import SignalSnapshot
 
 
 class SignalProcessingService:
@@ -32,10 +31,10 @@ class SignalProcessingService:
         self._initialized = False
 
         try:
-            from services.signal_processing_service.focus_adapter import FocusAdapter
             from services.signal_processing_service.fatigue_adapter import (
                 FatigueAdapter,
             )
+            from services.signal_processing_service.focus_adapter import FocusAdapter
 
             self.focus_adapter = FocusAdapter()
             self.fatigue_adapter = FatigueAdapter()
