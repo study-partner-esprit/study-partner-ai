@@ -233,6 +233,9 @@ def decide_with_llm(
         "is_late": input_data.is_late,
         "current_time": _iso(input_data.current_time),
         "session_stats": _session_stats_line(input_data.session_stats),
+        "catalog_courses_count": (
+            len(input_data.catalog_courses) if input_data.catalog_courses else 0
+        ),
     }
     tasks = [_task_line(t) for t in input_data.scheduled_tasks]
 
@@ -256,11 +259,20 @@ def decide_with_llm(
     # prompt (windowed by count and age, configurable via env).
     recent_history = window_history(recent_history) if recent_history else recent_history
 
+    # COACH-14: the bounded catalog is carried into the prompt as untrusted
+    # content; only its count lives in the trusted state (see state above).
+    catalog_courses = (
+        [c.model_dump() for c in input_data.catalog_courses]
+        if input_data.catalog_courses
+        else None
+    )
+
     user_prompt = build_user_prompt(
         state,
         scheduled_tasks=tasks,
         recent_history=recent_history,
         task_context=task_context,
+        catalog_courses=catalog_courses,
     )
 
     # COACH-05 + COACH-06: LLM output is reduced to a strict CoachOutput and
