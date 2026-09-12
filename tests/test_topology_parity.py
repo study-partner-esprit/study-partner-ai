@@ -41,6 +41,8 @@ def test_result_and_progress_routing_keys_match_fixture():
 def test_queues_and_naming_match_fixture():
     fx = load_fixture()
     assert t.RESULT_QUEUE == fx["queues"]["results"]
+    assert t.PROGRESS_QUEUE == fx["queues"]["progress"]
+    assert t.INGEST_RESULT_QUEUE == fx["queues"]["ingestResults"]
     naming = fx["naming"]
     assert t.work_queue_name("study.plan.generate") == naming["sampleWorkQueue"]
     assert t.dlq_queue_name("study.plan.generate") == naming["sampleDlq"]

@@ -16,10 +16,12 @@ EXCHANGE_DLX = "ai.dlx"
 EXCHANGE_RESULTS = "ai.results"
 
 RESULT_QUEUE = "ai.results.inbox"
+PROGRESS_QUEUE = "ai.results.progress"
+INGEST_RESULT_QUEUE = "ai.results.ingest"
 
 # SEPARATE routing key for staged progress events (INGEST-06). Workers publish
 # progress on ai.results with this key so the result inbox (bound to `result`)
-# never sees them; INGEST-07 binds a progress consumer here.
+# never sees them; INGEST-07 binds a progress consumer here on the Node side.
 PROGRESS_ROUTING_KEY = "progress"
 
 def _retry_delays() -> List[int]:
