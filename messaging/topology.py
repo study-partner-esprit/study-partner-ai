@@ -17,6 +17,11 @@ EXCHANGE_RESULTS = "ai.results"
 
 RESULT_QUEUE = "ai.results.inbox"
 
+# SEPARATE routing key for staged progress events (INGEST-06). Workers publish
+# progress on ai.results with this key so the result inbox (bound to `result`)
+# never sees them; INGEST-07 binds a progress consumer here.
+PROGRESS_ROUTING_KEY = "progress"
+
 def _retry_delays() -> List[int]:
     """Env override exists for integration tests (tiny delays); production
     uses the canonical 1s → 4s → 16s ladder."""

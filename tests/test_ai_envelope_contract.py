@@ -11,7 +11,9 @@ from pydantic import ValidationError
 from messaging.envelope import (
     ENVELOPE_VERSION,
     AI_JOB_TYPES,
+    PROGRESS_STAGES,
     validate_job_envelope,
+    validate_progress_envelope,
     validate_result_envelope,
 )
 
@@ -104,3 +106,36 @@ class TestResultEnvelope:
             validate_result_envelope(
                 {**VALID_BASE, "status": "completed", "payload": {}, "error": "nope"}
             )
+
+
+class TestProgressEnvelope:
+    """INGEST-06 staged progress events (routing key `progress`, NOT `result`)."""
+
+    @pytest.mark.parametrize("stage", sorted(PROGRESS_STAGES))
+    def test_accepts_every_stage(self, stage):
+        p = validate_progress_envelope(
+            {**VALID_BASE, "stage": stage, "progress": 0.5, "detail": "parsing files"}
+        )
+        assert p.status == "progress"
+        assert p.stage == stage
+
+    def test_progress_is_optional_and_bounded(self):
+        assert validate_progress_envelope({**VALID_BASE, "stage": "parsing"}).progress is None
+        with pytest.raises(ValidationError):
+            validate_progress_envelope({**VALID_BASE, "stage": "parsing", "progress": 1.5})
+
+    def test_rejects_unknown_stage(self):
+        with pytest.raises(ValidationError):
+            validate_progress_envelope({**VALID_BASE, "stage": "compiling"})
+
+    def test_rejects_oversized_detail(self):
+        with pytest.raises(ValidationError):
+            validate_progress_envelope(
+                {**VALID_BASE, "stage": "parsing", "detail": "x" * 300}
+            )
+
+    def test_result_envelope_still_rejects_progress_status(self):
+        # Progress lives on its own envelope/key — it must never be usable as a
+        # terminal result status (the orchestrator correlates completed/failed).
+        with pytest.raises(ValidationError):
+            validate_result_envelope({**VALID_BASE, "status": "progress"})

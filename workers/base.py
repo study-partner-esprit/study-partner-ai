@@ -36,6 +36,7 @@ from messaging.topology import (
     EXCHANGE_JOBS,
     EXCHANGE_RESULTS,
     MAX_RETRIES,
+    PROGRESS_ROUTING_KEY,
     RETRY_DELAYS_MS,
     RETRY_HEADER,
     declare_topology,
@@ -290,6 +291,56 @@ class BaseAIWorker:
                 type="result",
             ),
             routing_key="result",
+        )
+
+    async def _publish_progress(
+        self,
+        envelope: AiJobEnvelope,
+        *,
+        stage: str,
+        progress: Optional[float] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        """Emit a staged progress event for long-running jobs (INGEST-06).
+
+        Published on ``ai.results`` under routing key ``progress`` — a separate
+        key from ``result`` so the orchestrator's result inbox (and its
+        complete/fail correlation) is never affected. ``stage`` must be one of
+        PROGRESS_STAGES; the body is validated by AiProgressEnvelope before
+        publish, mirroring ``_publish_result``.
+        """
+        import aio_pika
+
+        from messaging.envelope import AiProgressEnvelope
+
+        body: Dict[str, Any] = {
+            "messageId": envelope.messageId,
+            "correlationId": envelope.correlationId,
+            "type": envelope.type,
+            "version": envelope.version,
+            "requestId": envelope.requestId,
+            "timestamp": envelope.timestamp.isoformat().replace("+00:00", "Z"),
+            "status": "progress",
+            "stage": stage,
+        }
+        if progress is not None:
+            body["progress"] = progress
+        if detail is not None:
+            body["detail"] = detail
+
+        AiProgressEnvelope.model_validate(body)  # never publish an invalid event
+
+        exchange = await self._channel.get_exchange(EXCHANGE_RESULTS)
+        await exchange.publish(
+            aio_pika.Message(
+                body=json.dumps(body).encode(),
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                content_type="application/json",
+                message_id=body["messageId"],
+                correlation_id=body["correlationId"],
+                type="progress",
+            ),
+            routing_key=PROGRESS_ROUTING_KEY,
         )
 
 
