@@ -1,4 +1,8 @@
-from agents.course_ingestion.extraction.pdf_loader import extract_text_from_pdf
+from agents.course_ingestion.extraction.pdf_loader import (
+    extract_text_from_pdf_sandboxed,
+    EncryptedPdfError,
+    PdfValidationError,
+)
 from agents.course_ingestion.extraction.ocr import ocr_pdf
 from agents.course_ingestion.parsing.layout_parser import detect_sections
 from agents.course_ingestion.parsing.section_builder import build_subtopics
@@ -33,8 +37,16 @@ def ingest_course(course_title: str, pdf_files: list):
             with open(pdf_path, "r", encoding="utf-8") as f:
                 text = f.read()
         else:
-            # Step 1: extract text
-            text = extract_text_from_pdf(pdf_path)
+            # Step 1: extract text (sandboxed — INGEST-04). Encrypted PDFs are
+            # rejected with a clear error; timeouts/limits surface as parse errors.
+            try:
+                text = extract_text_from_pdf_sandboxed(pdf_path)
+            except (EncryptedPdfError, PdfValidationError) as parse_err:
+                logger.error(
+                    "ingest_pdf_rejected",
+                    extra={"file": pdf_path, "reason": str(parse_err)},
+                )
+                raise
             # fallback to OCR if needed (text too small)
             if len(text.strip()) < 50:
                 logger.info("ingest_ocr_fallback", extra={"file": pdf_path})
