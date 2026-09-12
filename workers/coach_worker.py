@@ -25,6 +25,11 @@ back to the deterministic rule engine (`apply_rules`) and marks the result
 `fallbackUsed: true` (mirrors planner_worker PLAN-06). The fallback action
 still passes COACH-06 validation before it is returned.
 
+COACH-09: every completed decision (normal or rule-engine fallback) is
+persisted to the coach history collection on job completion, idempotently by
+`correlationId` — a retried or redelivered job cannot duplicate a history row.
+The failure path never reaches persistence, so it leaves no partial records.
+
 COACH-10 moves the Node caller off the legacy HTTP route. COACH-13 will feed
 the bounded `signals` window into the coach context (today the live flattened
 fields are used).
@@ -65,6 +70,7 @@ class CoachWorker(BaseAIWorker):
         # AIOrchestrator loads ML adapters + Mongo clients — build lazily on
         # first use so a worker that never handles a job pays no startup cost.
         self._orchestrator = orchestrator
+        self._history_repo = None
 
     @property
     def orchestrator(self):
@@ -74,8 +80,20 @@ class CoachWorker(BaseAIWorker):
             self._orchestrator = AIOrchestrator()
         return self._orchestrator
 
+    @property
+    def history_repo(self):
+        """Lazy CoachHistoryRepository; no-ops when the history store is down."""
+        if self._history_repo is None:
+            from agents.coach.services.coach_history_repository import (
+                CoachHistoryRepository,
+            )
+
+            self._history_repo = CoachHistoryRepository()
+        return self._history_repo
+
     async def handle(self, payload: Dict[str, Any], envelope) -> Dict[str, Any]:
         request = self._build_request(payload)
+        fallback_used = False
         try:
             action = await asyncio.to_thread(
                 self.orchestrator.run_coach,
@@ -92,10 +110,14 @@ class CoachWorker(BaseAIWorker):
             # recovery (NACK + TTL'd delay queues). On the final attempt the
             # job is NOT dead-lettered — it falls back to the deterministic
             # rule engine and still COMPLETES.
-            if getattr(self, "current_attempt", 0) >= MAX_RETRIES:
-                return await self._fallback_result(request, envelope.userId, exc)
-            raise
-        return self._coach_payload(action, fallback_used=False)
+            if getattr(self, "current_attempt", 0) < MAX_RETRIES:
+                raise
+            action = await self._fallback_action(request, envelope.userId, exc)
+            fallback_used = True
+        # COACH-09 AC#1/#2: persist on job completion, idempotent by
+        # correlationId. AC#3: failed jobs never reach this line.
+        await self._persist_result(request, envelope, action)
+        return self._coach_payload(action, fallback_used=fallback_used)
 
     # ------------------------------------------------------------ internals
 
@@ -107,33 +129,18 @@ class CoachWorker(BaseAIWorker):
         except ValidationError as exc:
             raise TerminalError(f"invalid coach request: {exc}") from exc
 
-    async def _fallback_result(
-        self, request: CoachRequest, user_id: str, cause: Exception
-    ) -> Dict[str, Any]:
-        """Final-attempt rule-engine fallback (COACH-08).
-
-        Mirrors planner_worker._fallback_result (PLAN-06): after retries are
-        exhausted, produce a deterministic, validated decision instead of
-        dead-lettering. The returned action still passes COACH-06 validation
-        and is COMPLETED with `fallbackUsed: true`.
-        """
+    def _build_coach_input(self, request: CoachRequest):
+        """Map a validated CoachRequest onto the CoachInput the rules read."""
         from datetime import datetime, timezone
 
-        from agents.coach.decision.output_parser import safe_fallback_nudge
-        from agents.coach.decision.output_validator import (
-            check_coach_output,
-            sanitize_nudge,
-        )
         from agents.coach.models.schemas import (
-            CoachAction,
             CoachInput,
             FatigueState,
             FocusState,
         )
-        from agents.coach.rules.rule_engine import apply_rules
 
         current_time = request.current_time or datetime.now(timezone.utc)
-        input_data = CoachInput(
+        return CoachInput(
             scheduled_tasks=[],
             current_time=current_time,
             focus_state=FocusState(
@@ -150,6 +157,25 @@ class CoachWorker(BaseAIWorker):
             is_late=False,
             signals=None,
         )
+
+    async def _fallback_action(self, request, user_id: str, cause: Exception):
+        """Final-attempt rule-engine fallback (COACH-08).
+
+        Mirrors planner_worker._fallback_result (PLAN-06): after retries are
+        exhausted, produce a deterministic, validated decision instead of
+        dead-lettering. The returned CoachAction still passes COACH-06
+        validation; `handle` marks the result `fallbackUsed: true` and
+        persists it (COACH-09).
+        """
+        from agents.coach.decision.output_parser import safe_fallback_nudge
+        from agents.coach.decision.output_validator import (
+            check_coach_output,
+            sanitize_nudge,
+        )
+        from agents.coach.models.schemas import CoachAction
+        from agents.coach.rules.rule_engine import apply_rules
+
+        input_data = self._build_coach_input(request)
 
         action = apply_rules(input_data)
         if action is None:
@@ -192,7 +218,35 @@ class CoachWorker(BaseAIWorker):
                 "coach_error": action.coach_error,
             },
         )
-        return self._coach_payload(action, fallback_used=True)
+        return action
+
+    async def _persist_result(self, request, envelope, action) -> None:
+        """COACH-09: persist the completed nudge to coach history.
+
+        Runs off the event loop; the repository degrades to a no-op when the
+        history store is unavailable, so persistence can never fail a job that
+        already produced a valid decision.
+        """
+        if action is None or not envelope.userId:
+            return
+        try:
+            input_data = self._build_coach_input(request)
+            await asyncio.to_thread(
+                self.history_repo.save_action,
+                envelope.userId,
+                action,
+                input_data,
+                trace_id=envelope.correlationId,
+                correlation_id=envelope.correlationId,
+            )
+        except Exception as exc:
+            logger.warning(
+                "coach_persist_result_error",
+                extra={
+                    "error": sanitized_error(exc),
+                    "userId": envelope.userId,
+                },
+            )
 
     def _coach_payload(self, action: Any, fallback_used: bool = False) -> Dict[str, Any]:
         from agents.coach.models.schemas import CoachAction
