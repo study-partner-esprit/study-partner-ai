@@ -27,6 +27,11 @@ AI_JOB_TYPES = frozenset(
 
 RESULT_STATUSES = frozenset(["completed", "failed"])
 
+# Ordered pipeline stages an ingestion job can report while running (INGEST-06).
+# INGEST-07 surfaces these to the client as "parsing → enriching → embedding →
+# indexing → done"; "indexing" with progress=1.0 marks completion.
+PROGRESS_STAGES = frozenset(["parsing", "enriching", "embedding", "indexing"])
+
 _UUID_V4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -120,6 +125,44 @@ class AiResultEnvelope(_EnvelopeBase):
         return self
 
 
+class AiProgressEnvelope(_EnvelopeBase):
+    """Staged progress event published by Python workers (INGEST-06).
+
+    Published on the `ai.results` exchange with routing key `progress` — NOT
+    `result` — so the existing result inbox (which drives
+    AiJob complete/fail correlation) never consumes these. INGEST-07 binds a
+    progress consumer on that routing key and surfaces the stage to the client.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["progress"] = "progress"
+    stage: str
+    progress: Optional[float] = None  # 0.0 → 1.0 within the overall pipeline
+    detail: Optional[str] = None
+
+    @field_validator("stage")
+    @classmethod
+    def _check_stage(cls, v: str) -> str:
+        if v not in PROGRESS_STAGES:
+            raise ValueError(f"stage must be one of: {', '.join(sorted(PROGRESS_STAGES))}")
+        return v
+
+    @field_validator("progress")
+    @classmethod
+    def _check_progress(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not (0.0 <= v <= 1.0):
+            raise ValueError("progress must be within [0, 1]")
+        return v
+
+    @field_validator("detail")
+    @classmethod
+    def _check_detail(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 256:
+            raise ValueError("detail must be at most 256 chars")
+        return v
+
+
 def validate_job_envelope(message: Any) -> AiJobEnvelope:
     """Parse + validate an incoming job message. Raises ValidationError."""
     return AiJobEnvelope.model_validate(message)
@@ -128,3 +171,8 @@ def validate_job_envelope(message: Any) -> AiJobEnvelope:
 def validate_result_envelope(message: Any) -> AiResultEnvelope:
     """Parse + validate an incoming result event. Raises ValidationError."""
     return AiResultEnvelope.model_validate(message)
+
+
+def validate_progress_envelope(message: Any) -> AiProgressEnvelope:
+    """Parse + validate an incoming progress event. Raises ValidationError."""
+    return AiProgressEnvelope.model_validate(message)

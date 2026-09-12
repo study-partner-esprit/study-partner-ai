@@ -33,6 +33,11 @@ def test_exchanges_match_fixture():
     assert t.EXCHANGE_RESULTS == fx["results"]
 
 
+def test_result_and_progress_routing_keys_match_fixture():
+    fx = load_fixture()["routingKeys"]
+    assert t.PROGRESS_ROUTING_KEY == fx["progress"]
+
+
 def test_queues_and_naming_match_fixture():
     fx = load_fixture()
     assert t.RESULT_QUEUE == fx["queues"]["results"]
