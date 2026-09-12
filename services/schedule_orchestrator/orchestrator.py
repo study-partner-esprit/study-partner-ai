@@ -41,6 +41,27 @@ class ScheduleOrchestrator:
         self.schedule_history_collection = self.db["schedule_history"]
         self.schedule_snapshots_collection = self.db["schedule_snapshots"]
 
+    def process_schedule_change(
+        self,
+        change: ScheduleChange,
+        user_id: str,
+        current_time: Optional[datetime] = None,
+    ) -> dict:
+        """Apply a bare ScheduleChange (COACH-16 worker path).
+
+        Wraps `process_coach_action` so the downstream schedule worker can
+        apply an already-parsed change without fabricating a CoachAction.
+        """
+        return self.process_coach_action(
+            CoachAction(
+                action_type="renegotiate_task",
+                reasoning=change.reasoning,
+                schedule_changes=change,
+            ),
+            user_id,
+            current_time,
+        )
+
     def process_coach_action(
         self,
         coach_action: CoachAction,
