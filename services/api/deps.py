@@ -7,8 +7,6 @@ from pathlib import Path
 from bson import ObjectId
 from pymongo import MongoClient
 
-from services.signal_processing_service.focus_detector import get_focus_detector
-from services.signal_processing_service.fatigue_detector import get_fatigue_detector
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -87,6 +85,18 @@ def get_schedule_orchestrator():
 
         _schedule_orchestrator = ScheduleOrchestrator()
     return _schedule_orchestrator
+
+
+def get_focus_detector():
+    from services.signal_processing_service.focus_detector import get_focus_detector as _impl
+
+    return _impl()
+
+
+def get_fatigue_detector(user_id=None):
+    from services.signal_processing_service.fatigue_detector import get_fatigue_detector as _impl
+
+    return _impl(user_id)
 
 
 def get_signal_service():
