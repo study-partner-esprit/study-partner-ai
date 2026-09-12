@@ -365,6 +365,49 @@ class KnowledgeExtractRequest(BaseModel):
         return v
 
 
+# INGEST-05 limits — keep in sync with payloadSchemas.js
+INGEST_MAX_FILES = 10
+INGEST_FILENAME_MAX_CHARS = 256
+INGEST_MIME_MAX_CHARS = 128
+
+
+class IngestFileMeta(BaseModel):
+    """Per-file storage metadata for a `study.ingest.course` job (INGEST-05)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(..., min_length=1, max_length=INGEST_FILENAME_MAX_CHARS)
+    originalName: str = Field(..., min_length=1, max_length=INGEST_FILENAME_MAX_CHARS)
+    mimetype: str = Field(..., min_length=1, max_length=INGEST_MIME_MAX_CHARS)
+    size: int = Field(..., ge=0)
+    path: Optional[str] = Field(
+        default=None, min_length=1, max_length=CONTENT_REF_MAX_CHARS
+    )
+
+
+class IngestionRequest(BaseModel):
+    """Validated payload for `study.ingest.course` jobs (INGEST-05).
+
+    Reference fields only — raw content is read from storage by the worker
+    (INGEST-06), never inlined in the envelope. `fileRef` points at the
+    course-scoped upload directory; `files` carries per-file metadata + the
+    storage-relative path. Limits mirror `payloadSchemas.js`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    courseId: str = Field(..., min_length=1, max_length=COURSE_ID_MAX_CHARS)
+    fileRef: str = Field(..., min_length=1, max_length=CONTENT_REF_MAX_CHARS)
+    files: List[IngestFileMeta] = Field(default_factory=list, max_length=INGEST_MAX_FILES)
+
+    @field_validator("courseId", "fileRef")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("must be a non-empty string")
+        return v
+
+
 class SearchSource(BaseModel):
     """A single cited source in a search result (SEARCH-04).
 
