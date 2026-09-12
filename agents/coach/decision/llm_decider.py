@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 
 from agents.coach.models.schemas import CoachInput, CoachAction, ScheduledTask
@@ -16,8 +17,9 @@ from agents.coach.decision.output_validator import (
     sanitize_nudge,
 )
 from agents.coach.context.preprocess import window_history
+from messaging.failures import RetryableError
 from pydantic import ValidationError
-from utils.llm_client import LLMRequestError, ask
+from utils.llm_client import LLMRequestError, MissingMockResponderError, ask
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -25,8 +27,8 @@ logger = get_logger(__name__)
 
 def call_gemini(system_prompt: str, user_prompt: str, trace_id: str = "") -> str:
     # COACH-07: routed through the shared LiteLLM client (utils/llm_client.py).
-    # Without a real provider key (or with LLM_MOCK=1) it returns the mock
-    # responder; a failing real call also degrades to the mock, as before.
+    # Under LLM_MOCK=1 (or with no provider key) ask returns the mock responder;
+    # that is the intended degraded behaviour, not an outage.
     try:
         return ask(
             "coach",
@@ -35,9 +37,18 @@ def call_gemini(system_prompt: str, user_prompt: str, trace_id: str = "") -> str
             trace_id=trace_id,
             mock_fn=get_mock_gemini_response,
         )
-    except LLMRequestError:
-        logger.warning("coach_llm_api_error", extra={"trace_id": trace_id})
+    except MissingMockResponderError:
+        # Defensive: the mock_fn above means this only happens if ask's mock
+        # responder itself is unavailable. Quietly degrade to the mock output.
+        logger.info("coach_llm_unavailable_mock_fallback", extra={"trace_id": trace_id})
         return get_mock_gemini_response(user_prompt)
+    except LLMRequestError as exc:
+        # COACH-08: timeout/quota/transient infra failures are raised so the
+        # job-bus retry policy owns recovery (AI-COM-06), never fabricated
+        # into a fake decision. CoachWorker retries and falls back to the rule
+        # engine on the final attempt.
+        logger.warning("coach_llm_api_error", extra={"error": str(exc), "trace_id": trace_id})
+        raise RetryableError(f"coach LLM unavailable: {exc}") from exc
 
 
 def get_mock_gemini_response(user_prompt: str) -> str:
