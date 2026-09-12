@@ -8,8 +8,9 @@ Prompt-injection isolation for the coach LLM:
   title/subject/key concepts, recent chat/history messages) is wrapped in the
   shared prompt_guard nonce-delimited UNTRUSTED DATA blocks so a student
   cannot impersonate system instructions through task titles or chat content.
-- Structured system/ML-derived state (focus, fatigue, is_late, counts) is
-  serialised separately and treated as trusted input.
+- Structured system/ML-derived state (focus, fatigue, is_late, counts, and
+  the COACH-13 session stats block) is serialised separately and treated as
+  trusted input.
 - PII (emails, person names) is redacted from every user-supplied string
   before wrapping (COACH-04 context preprocessing).
 
@@ -48,6 +49,13 @@ Fatigue Management Guidelines:
 - Fatigue 0.9+: Consider session suspension if late (>9 PM) or extreme fatigue
 - Always delay subsequent tasks when adding breaks
 
+Session Stats Guidelines (COACH-13, from the trusted session_stats block):
+- Low progress_pct early in a session: avoid pressure, encourage steady progress
+- Long minutes_elapsed combined with escalating fatigue: favour a break
+- High task_switches without progress: recommend single-tasking over rewards
+- A positive streak (high current_streak_days): reinforce momentum, never shame
+- Missing stats (not provided): make the decision from signals alone, never ask
+
 Intervention Hierarchy (Priority Order):
 1. Deep focus (Focused + high confidence): Absolute silence - DO NOT interrupt
 2. User override signals (DND, 3+ ignores): Respect user autonomy
@@ -81,6 +89,8 @@ _DECISION_INSTRUCTIONS = """Consider all factors together:
 - What's the best balance of productivity vs well-being?
 - Should schedule changes be made?
 - Are we respecting focus state from ML signals?
+- How do the session stats (progress_pct, minutes_elapsed, task_switches,
+  break_count, current_streak_days) shape the right intervention?
 - Have we intervened recently (avoid repetition)?
 
 Return ONLY a JSON object with schedule_changes included when appropriate:
