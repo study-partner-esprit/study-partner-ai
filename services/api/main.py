@@ -3,8 +3,13 @@
 This service provides RESTful endpoints for the frontend to interact with all AI agents.
 """
 
+import sys
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from routers.ingestion import router as ingestion_router
 from routers.planning import router as planning_router
